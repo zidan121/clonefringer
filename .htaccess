@@ -1,0 +1,8 @@
+Options -Indexes
+RewriteEngine On
+
+# Route API calls to the PHP front controller.
+RewriteRule ^api(?:/.*)?$ backend/public/api.php [QSA,L]
+
+# Do not expose server-side configuration, database scripts, or documentation.
+RewriteRule ^(?:backend/bootstrap\.php|backend/bin/|database/|docs/|\.git/).*$ - [F,L]
