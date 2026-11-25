@@ -3,8 +3,12 @@ declare(strict_types=1);
 require_once dirname(__DIR__) . '/bootstrap.php';
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
-$path = rtrim(parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/', '/') ?: '/';
-$path = preg_replace('#^/api#', '', $path) ?: '/';
+$requestPath = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
+$path = '/';
+if (preg_match('#/api(?:/(.*))?$#', $requestPath, $routeMatch)) {
+    $path = empty($routeMatch[1]) ? '/' : '/' . $routeMatch[1];
+}
+$path = rtrim($path, '/') ?: '/';
 
 if ($method === 'GET' && $path === '/health') {
     try { database()->query('SELECT 1'); jsonResponse(200,['ok'=>true,'application'=>'CLONEFRINGER','database'=>'connected','time'=>date(DATE_ATOM)]); }
