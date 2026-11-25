@@ -63,6 +63,7 @@ try {
     $validScans = (int)$legacy->query("SELECT COUNT(*) FROM att_log WHERE scan_date >= '2001-01-01 00:00:00'")->fetchColumn();
     $unmatchedPins = $legacy->query("SELECT a.pin,COUNT(*) AS scan_count,MIN(a.scan_date) AS first_seen,MAX(a.scan_date) AS last_seen FROM att_log a LEFT JOIN pegawai p ON p.pegawai_pin=a.pin WHERE a.scan_date >= '2001-01-01 00:00:00' AND p.pegawai_id IS NULL GROUP BY a.pin ORDER BY a.pin")->fetchAll();
     $schedulePatternRows = $legacy->query("SELECT m.jdw_kerja_m_id,m.jdw_kerja_m_name,d.jdw_kerja_d_idx,d.jdw_kerja_d_hari,d.jdw_kerja_d_libur,j.jk_name,j.jk_bcin,j.jk_ecout,j.jk_tol_late FROM jdw_kerja_m m LEFT JOIN jdw_kerja_d d ON d.jdw_kerja_m_id=m.jdw_kerja_m_id LEFT JOIN jam_kerja j ON j.jk_id=d.jk_id ORDER BY m.jdw_kerja_m_id,d.jdw_kerja_d_idx")->fetchAll();
+    $assignmentRows = $legacy->query("SELECT pegawai_id,jdw_kerja_m_id,jdw_kerja_m_mulai FROM jdw_kerja_pegawai ORDER BY pegawai_id,jdw_kerja_m_mulai")->fetchAll();
     $report = [
         'mode' => $apply ? 'APPLY' : 'DRY_RUN',
         'source_scope' => 'SD',
@@ -71,7 +72,7 @@ try {
         'scanlog_placeholder_date_count' => $placeholderScans,
         'target_unit' => 'SDIT',
         'unmatched_source_pins' => $unmatchedPins,
-        'schedule_pattern_details' => $schedulePatternRows,
+        'schedule_pattern_details' => $schedulePatternRows,\n        'schedule_assignment_count' => count($assignmentRows),
         'notes' => [
             'PIN dipertahankan sebagai teks.',
             'Data pegawai dengan PIN yang sudah ada tidak ditimpa.',
@@ -122,6 +123,75 @@ try {
             $id = (int)$target->lastInsertId(); $machineInserted++;
         }
         $machineMap[$sn] = (int)$id;
+    }
+
+    // Import weekly schedules only when all active weekdays in a source pattern use identical hours.
+    // The target schema has one start/end pair per schedule; varying daily shifts are deliberately rejected.
+    $scheduleMap = [];
+    $scheduleGroups = [];
+    foreach ($schedulePatternRows as $dayRow) {
+        $sid = (int)$dayRow['jdw_kerja_m_id'];
+        if (!isset($scheduleGroups[$sid])) $scheduleGroups[$sid] = ['name' => (string)$dayRow['jdw_kerja_m_name'], 'days' => [], 'hours' => []];
+        if ((int)$dayRow['jdw_kerja_d_libur'] === 0 && (int)($dayRow['jdw_kerja_d_idx'] ?? 0) !== 999 && (int)($dayRow['jk_id'] ?? 0) !== 0) {
+            $dayName = trim((string)$dayRow['jdw_kerja_d_hari']);
+            if (in_array($dayName, ['Senin','Selasa','Rabu','Kamis','Jumat','Sabtu','Minggu'], true)) {
+                $scheduleGroups[$sid]['days'][] = $dayName;
+                $scheduleGroups[$sid]['hours'][] = [
+                    'start' => substr((string)$dayRow['jk_bcin'], 0, 8),
+                    'end' => substr((string)$dayRow['jk_ecout'], 0, 8),
+                    'tolerance' => max(0, (int)$dayRow['jk_tol_late']),
+                ];
+            }
+        }
+    }
+    $schedulePlan = [];
+    foreach ($scheduleGroups as $sid => $group) {
+        $hours = $group['hours'];
+        if (!$hours) {
+            $schedulePlan[$sid] = ['valid' => false, 'reason' => 'Tidak ada hari kerja aktif yang memiliki jam kerja.'];
+            continue;
+        }
+        $uniqueHours = [];
+        foreach ($hours as $h) $uniqueHours[json_encode($h)] = $h;
+        if (count($uniqueHours) !== 1) {
+            $schedulePlan[$sid] = ['valid' => false, 'reason' => 'Jam masuk/pulang atau toleransi berbeda antarhari; perlu model jadwal harian.'];
+            continue;
+        }
+        $h = array_values($uniqueHours)[0];
+        $schedulePlan[$sid] = [
+            'valid' => true, 'name' => $group['name'], 'days' => array_values(array_unique($group['days'])),
+            'start' => $h['start'], 'end' => $h['end'], 'tolerance' => $h['tolerance'],
+        ];
+    }
+    $scheduleImported = 0;
+    $assignmentImported = 0;
+    $assignmentSkipped = 0;
+    $findSchedule = $target->prepare('SELECT id FROM work_schedules WHERE code=? LIMIT 1');
+    $insertSchedule = $target->prepare('INSERT INTO work_schedules (code,name,start_time,end_time,tolerance_minutes,crosses_midnight,active_days,is_active) VALUES (?,?,?,?,?,0,?,1)');
+    foreach ($schedulePlan as $sid => $plan) {
+        if (empty($plan['valid'])) continue;
+        $code = 'FS-SD-' . $sid;
+        $findSchedule->execute([$code]); $scheduleId = $findSchedule->fetchColumn();
+        if (!$scheduleId) {
+            $insertSchedule->execute([$code, substr('SD - '.$plan['name'], 0, 120), $plan['start'], $plan['end'], min(600, $plan['tolerance']), json_encode($plan['days'], JSON_UNESCAPED_UNICODE)]);
+            $scheduleId = (int)$target->lastInsertId(); $scheduleImported++;
+        }
+        $scheduleMap[(int)$sid] = (int)$scheduleId;
+    }
+    $findAssignment = $target->prepare('SELECT id FROM employee_schedule_assignments WHERE employee_id=? AND schedule_id=? AND effective_from=? LIMIT 1');
+    $insertAssignment = $target->prepare('INSERT INTO employee_schedule_assignments (employee_id,schedule_id,effective_from) VALUES (?,?,?)');
+    foreach ($assignmentRows as $assignmentRow) {
+        $legacyEmployeeId = (int)$assignmentRow['pegawai_id'];
+        $legacyScheduleId = (int)$assignmentRow['jdw_kerja_m_id'];
+        $employeeId = $employeeMap[$legacyEmployeeId] ?? null;
+        $scheduleId = $scheduleMap[$legacyScheduleId] ?? null;
+        $effectiveFrom = cleanDate($assignmentRow['jdw_kerja_m_mulai']);
+        if (!$employeeId || !$scheduleId || !$effectiveFrom) { $assignmentSkipped++; continue; }
+        $findAssignment->execute([$employeeId, $scheduleId, $effectiveFrom]);
+        if (!$findAssignment->fetchColumn()) {
+            $insertAssignment->execute([$employeeId, $scheduleId, $effectiveFrom]);
+            $assignmentImported++;
+        }
     }
 
     $findPin = $target->prepare('SELECT id FROM employees WHERE pin=? LIMIT 1');
