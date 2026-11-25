@@ -17,10 +17,10 @@
 
 ## Tahap 3 — Master dan jadwal
 - [ ] Departemen, kantor, jabatan
-- [ ] Jam kerja dan toleransi keterlambatan
+- [x] Master jam kerja, hari aktif, istirahat, dan toleransi (demo lokal)\n- [ ] Persistensi master jam kerja ke database
 - [ ] Jadwal normal, berpola, auto shift
 - [ ] Kalender dan hari libur
-- [ ] Jadwal individual dan default unit
+- [x] Penugasan master jadwal per pegawai dan override jam/toleransi (demo lokal)\n- [ ] Default jadwal per unit dan integrasi kalkulasi
 
 ## Tahap 4 — Mesin dan transaksi
 - [x] Inventaris perangkat, tambah/ubah/hapus, parameter koneksi, ekspor CSV
