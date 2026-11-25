@@ -181,7 +181,7 @@ if (preg_match('#^/schedules/(\\d+)$#',$path,$m)) {
     }
     if($method==='DELETE'){
         $user=requireRole(['admin']);requireCsrf();
-        try{$pdo=database();$st=$pdo->prepare('SELECT * FROM work_schedules WHERE id=?');$st->execute([$id]);$before=$st->fetch();if(!$before)jsonResponse(404,['ok'=>false,'message'=>'Jadwal tidak ditemukan.');
+        try{$pdo=database();$st=$pdo->prepare('SELECT * FROM work_schedules WHERE id=?');$st->execute([$id]);$before=$st->fetch();if(!$before)jsonResponse(404,['ok'=>false,'message'=>'Jadwal tidak ditemukan.']);
             $pdo->prepare('UPDATE work_schedules SET is_active=0 WHERE id=?')->execute([$id]);audit($pdo,(int)$user['id'],'deactivate','work_schedule',$id,$before,['is_active'=>0]);jsonResponse(200,['ok'=>true,'message'=>'Jadwal dinonaktifkan; riwayat penugasan tetap dipertahankan.']);
         }catch(Throwable $e){error_log('[schedule deactivate] '.$e->getMessage());jsonResponse(500,['ok'=>false,'message'=>'Gagal menonaktifkan jadwal.']);}
     }
