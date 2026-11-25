@@ -1,10 +1,10 @@
 // Employee module: local demo data only. Replace with persistent backend in a later phase.
 const demoEmployees = [
- {pin:"001",name:"Ahmad Fauzi",birth:"1988-04-12",position:"Guru",department:"SDIT",office:"Grobogan",phone:"081234560001",privilege:"User",status:"Aktif",schedule:"Reguler",fingerprints:2},
- {pin:"002",name:"Siti Aminah",birth:"1992-09-21",position:"Guru",department:"RAIT",office:"Grobogan",phone:"081234560002",privilege:"User",status:"Aktif",schedule:"Reguler",fingerprints:2},
- {pin:"003",name:"Budi Santoso",birth:"1985-01-03",position:"Staf IT",department:"Yayasan",office:"Grobogan",phone:"081234560003",privilege:"Admin",status:"Aktif",schedule:"Kantor",fingerprints:1},
- {pin:"004",name:"Dewi Lestari",birth:"1990-06-18",position:"Guru",department:"SMPIT",office:"Grobogan",phone:"081234560004",privilege:"User",status:"Non Aktif",schedule:"Reguler",fingerprints:0},
- {pin:"005",name:"Rina Wulandari",birth:"1995-12-09",position:"Tata Usaha",department:"KBIT",office:"Grobogan",phone:"081234560005",privilege:"User",status:"Aktif",schedule:"Kantor",fingerprints:2}
+ {pin:"001",name:"Ahmad Fauzi",birth:"1988-04-12",position:"Guru",department:"SDIT",office:"Grobogan",phone:"081234560001",email:"",address:"",gender:"Laki-laki",religion:"Islam",maritalStatus:"Menikah",education:"S1",bloodType:"O",children:2,joinDate:"2020-07-01",contractEnd:"",password:"",rfid:"",privilege:"User",status:"Aktif",schedule:"Reguler",fingerprints:2},
+ {pin:"002",name:"Siti Aminah",birth:"1992-09-21",position:"Guru",department:"RAIT",office:"Grobogan",phone:"081234560002",email:"",address:"",gender:"Perempuan",religion:"Islam",maritalStatus:"Menikah",education:"S1",bloodType:"A",children:1,joinDate:"2021-07-01",contractEnd:"",password:"",rfid:"",privilege:"User",status:"Aktif",schedule:"Reguler",fingerprints:2},
+ {pin:"003",name:"Budi Santoso",birth:"1985-01-03",position:"Staf IT",department:"Yayasan",office:"Grobogan",phone:"081234560003",email:"",address:"",gender:"Laki-laki",religion:"Islam",maritalStatus:"Menikah",education:"S1",bloodType:"B",children:2,joinDate:"2019-01-01",contractEnd:"",password:"",rfid:"",privilege:"Admin",status:"Aktif",schedule:"Kantor",fingerprints:1},
+ {pin:"004",name:"Dewi Lestari",birth:"1990-06-18",position:"Guru",department:"SMPIT",office:"Grobogan",phone:"081234560004",email:"",address:"",gender:"Perempuan",religion:"Islam",maritalStatus:"Menikah",education:"S1",bloodType:"AB",children:1,joinDate:"2022-07-01",contractEnd:"",password:"",rfid:"",privilege:"User",status:"Non Aktif",schedule:"Reguler",fingerprints:0},
+ {pin:"005",name:"Rina Wulandari",birth:"1995-12-09",position:"Tata Usaha",department:"KBIT",office:"Grobogan",phone:"081234560005",email:"",address:"",gender:"Perempuan",religion:"Islam",maritalStatus:"Belum Menikah",education:"SMA",bloodType:"O",children:0,joinDate:"2023-07-01",contractEnd:"",password:"",rfid:"",privilege:"User",status:"Aktif",schedule:"Kantor",fingerprints:2}
 ];
 let employees = demoEmployees.map(x=>({...x}));
 let selectedPins = new Set();
@@ -56,16 +56,30 @@ function employeePage(){
  </section>
  <dialog id="employee-dialog" class="employee-dialog"><form id="employee-form" method="dialog">
   <div class="dialog-head"><strong id="dialog-title">Tambah Pegawai</strong><button type="button" id="close-dialog" aria-label="Tutup">×</button></div>
-  <div class="form-grid">
-   <label>PIN *<input name="pin" required maxlength="20"></label><label>Nama *<input name="name" required></label>
-   <label>Tanggal lahir<input name="birth" type="date"></label><label>Jabatan<input name="position"></label>
-   <label>Departemen<input name="department"></label><label>Kantor<input name="office"></label>
-   <label>No. telepon<input name="phone"></label><label>Privilege<select name="privilege"><option>User</option><option>Admin</option></select></label>
-   <label>Status<select name="status"><option>Aktif</option><option>Non Aktif</option><option>Berhenti</option></select></label>
-   <label>Jadwal<input name="schedule" value="Reguler"></label>
-   <label>Jumlah sidik jari<input name="fingerprints" type="number" min="0" max="10" value="0"></label>
+  <div class="detail-sections">
+   <section class="detail-section"><h3>Identitas & Data Pribadi</h3><div class="form-grid">
+    <label>PIN / ID Pegawai *<input name="pin" required maxlength="20"></label><label>Nama Lengkap *<input name="name" required></label>
+    <label>Tanggal lahir<input name="birth" type="date"></label><label>Jenis kelamin<select name="gender"><option value="">Pilih</option><option>Laki-laki</option><option>Perempuan</option></select></label>
+    <label>Agama<input name="religion"></label><label>Status pernikahan<select name="maritalStatus"><option value="">Pilih</option><option>Belum Menikah</option><option>Menikah</option><option>Cerai</option></select></label>
+    <label>Pendidikan<input name="education"></label><label>Golongan darah<select name="bloodType"><option value="">Tidak diketahui</option><option>A</option><option>B</option><option>AB</option><option>O</option></select></label>
+    <label>Jumlah anak<input name="children" type="number" min="0" max="30" value="0"></label>
+   </div></section>
+   <section class="detail-section"><h3>Informasi Kepegawaian</h3><div class="form-grid">
+    <label>Jabatan<input name="position"></label><label>Departemen<input name="department"></label>
+    <label>Kantor<input name="office"></label><label>Jadwal kerja<input name="schedule" value="Reguler"></label>
+    <label>Tanggal masuk<input name="joinDate" type="date"></label><label>Akhir kontrak<input name="contractEnd" type="date"></label>
+    <label>Status pegawai<select name="status"><option>Aktif</option><option>Non Aktif</option><option>Berhenti</option></select></label><label>Privilege mesin<select name="privilege"><option>User</option><option>Admin</option></select></label>
+   </div></section>
+   <section class="detail-section"><h3>Kontak & Alamat</h3><div class="form-grid">
+    <label>No. telepon<input name="phone" type="tel"></label><label>Email<input name="email" type="email"></label>
+    <label class="full-field">Alamat<textarea name="address" rows="2"></textarea></label>
+   </div></section>
+   <section class="detail-section"><h3>Identitas Mesin & Biometrik</h3><div class="form-grid">
+    <label>Password mesin<input name="password" type="text" autocomplete="off"></label><label>RFID / Kartu<input name="rfid"></label>
+    <label>Jumlah sidik jari terdaftar<input name="fingerprints" type="number" min="0" max="10" value="0"></label>
+   </div><p class="form-hint">Template biometrik tidak disimpan melalui form ini. Registrasi sidik jari dilakukan melalui perangkat yang kompatibel.</p></section>
   </div>
-  <p class="form-hint">PIN harus unik. Data pada tahap ini hanya berada di memori browser.</p>
+  <p class="form-hint">PIN harus unik. Data ini masih berupa contoh lokal di memori browser, belum disimpan ke database.</p>
   <div class="dialog-actions"><button type="button" class="action-button" id="cancel-dialog">Batal</button><button type="submit" class="action-button primary">Simpan</button></div>
  </form></dialog>`;
 }
