@@ -60,6 +60,7 @@ try {
         $counts[$table] = (int)$legacy->query("SELECT COUNT(*) FROM `{$table}`")->fetchColumn();
     }
     $placeholderScans = (int)$legacy->query("SELECT COUNT(*) FROM att_log WHERE DATE(scan_date)='2000-01-01' OR scan_date='0000-00-00 00:00:00'")->fetchColumn();
+    $unknownDeviceSerials = $legacy->query("SELECT a.sn,COUNT(*) AS scan_count,MIN(a.scan_date) AS first_seen,MAX(a.scan_date) AS last_seen FROM att_log a LEFT JOIN device d ON d.sn=a.sn WHERE a.scan_date >= '2001-01-01 00:00:00' AND DATE(a.scan_date)<>'2000-01-01' AND (d.sn IS NULL OR TRIM(COALESCE(d.sn,''))='') GROUP BY a.sn ORDER BY a.sn")->fetchAll();
     $validScans = (int)$legacy->query("SELECT COUNT(*) FROM att_log WHERE scan_date >= '2001-01-01 00:00:00'")->fetchColumn();
     $scansBeforeEmployment = (int)$legacy->query("SELECT COUNT(*) FROM att_log a JOIN pegawai p ON p.pegawai_pin=a.pin WHERE a.scan_date >= '2001-01-01 00:00:00' AND p.tgl_mulai_kerja IS NOT NULL AND p.tgl_mulai_kerja > '2000-01-01' AND DATE(a.scan_date)<p.tgl_mulai_kerja")->fetchColumn();
     $unmatchedPins = $legacy->query("SELECT a.pin,COUNT(*) AS scan_count,MIN(a.scan_date) AS first_seen,MAX(a.scan_date) AS last_seen FROM att_log a LEFT JOIN pegawai p ON p.pegawai_pin=a.pin WHERE a.scan_date >= '2001-01-01 00:00:00' AND p.pegawai_id IS NULL GROUP BY a.pin ORDER BY a.pin")->fetchAll();
@@ -74,6 +75,7 @@ try {
         'scanlogs_before_employee_join_date' => $scansBeforeEmployment,
         'target_unit' => 'SDIT',
         'unmatched_source_pins' => $unmatchedPins,
+        'scanlogs_without_matching_device' => $unknownDeviceSerials,
         'schedule_pattern_details' => $schedulePatternRows,
         'schedule_assignment_count' => count($assignmentRows),
         'notes' => [
@@ -84,8 +86,12 @@ try {
             'Kredensial aktivasi dan communication key mesin tidak dibaca atau dipindahkan.',
             'Jadwal lama hanya dianalisis; pola mingguan yang berbeda harus dipetakan sebelum dipakai untuk rekap.',
             'Impor scanlog menggunakan ID transaksi deterministik agar dapat dijalankan ulang tanpa menggandakan log.',
+            'Scanlog hanya boleh diimpor jika nomor seri sumber cocok dengan tabel device; serial yang tidak cocok dilaporkan dan menghalangi --apply.',
         ],
     ];
+    if ($apply && $unknownDeviceSerials) {
+        throw new RuntimeException('Impor dibatalkan: ada scanlog dengan nomor seri mesin yang tidak ditemukan di tabel device. Perbaiki pemetaan mesin sumber sebelum --apply.');
+    }
     if (!$apply) {
         $report['next_step'] = 'Periksa laporan ini. Jalankan ulang dengan --apply hanya setelah backup database tujuan dan persetujuan operator.';
         report($report);
