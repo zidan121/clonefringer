@@ -1,6 +1,6 @@
 /* CLONEFRINGER API client. Configure window.CLONEFRINGER_API_BASE before this file if needed. */
 window.CfApi = (() => {
- const base=(window.CLONEFRINGER_API_BASE||'/api').replace(/\/$/,'');
+ const base=(window.CLONEFRINGER_API_BASE||new URL('api',document.baseURI).pathname).replace(/\/$/,'');
  let csrf='';
  let user=null;
  async function request(path,options={}) {
