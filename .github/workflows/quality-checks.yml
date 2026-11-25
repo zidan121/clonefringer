@@ -25,3 +25,5 @@ jobs:
           for file in src/*.js; do node --check "$file"; done
 
 # Re-run syntax checks after module integration updates.
+
+# Syntax verification after attendance module fix.
