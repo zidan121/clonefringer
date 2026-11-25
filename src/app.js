@@ -4,6 +4,7 @@ function activate(page){navButtons.forEach(b=>{const active=b.dataset.page===pag
  if(page==="dashboard"){content.innerHTML=dashboardMarkup;return;}
  if(page==="pegawai"){content.innerHTML=employeePage();initEmployeePage();return;}
  if(page==="pengecualian"){content.innerHTML=exceptionPage();initExceptionPage();return;}
+ if(page==="mesin"){content.innerHTML=machinePage();initMachinePage();return;}
  const item=pages[page]||pages.dashboard;content.innerHTML=`<section class="placeholder-page"><header class="page-heading"><h1>${item.title}</h1><p>${item.description||"Modul sedang disiapkan."}</p></header><div class="toolbar"><button class="primary" disabled>＋ Tambah (tahap berikutnya)</button><button disabled>Import</button><button disabled>Export</button><button disabled>Cetak</button></div><div class="empty-state"><strong>Modul ${item.title} belum diimplementasikan.</strong><p>Kerangka navigasi tersedia. Fungsi dan koneksi database dibangun pada tahap modul berikutnya.</p></div></section>`;
 }
 navButtons.forEach(b=>b.addEventListener("click",()=>activate(b.dataset.page)));
