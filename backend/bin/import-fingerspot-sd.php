@@ -33,7 +33,7 @@ function tableExists(PDO $pdo, string $table): bool {
 }
 function cleanDate(mixed $value): ?string {
     $v = trim((string)$value);
-    return ($v === '' || str_starts_with($v, '0000-00-00')) ? null : $v;
+    return ($v === '' || str_starts_with($v, '0000-00-00') || $v === '2000-01-01') ? null : $v;
 }
 function genderValue(mixed $value): ?string {
     return match ((int)$value) { 1 => 'male', 2 => 'female', default => null };
@@ -61,6 +61,7 @@ try {
     }
     $placeholderScans = (int)$legacy->query("SELECT COUNT(*) FROM att_log WHERE DATE(scan_date)='2000-01-01' OR scan_date='0000-00-00 00:00:00'")->fetchColumn();
     $validScans = (int)$legacy->query("SELECT COUNT(*) FROM att_log WHERE scan_date >= '2001-01-01 00:00:00'")->fetchColumn();
+    $scansBeforeEmployment = (int)$legacy->query("SELECT COUNT(*) FROM att_log a JOIN pegawai p ON p.pegawai_pin=a.pin WHERE a.scan_date >= '2001-01-01 00:00:00' AND p.tgl_mulai_kerja IS NOT NULL AND p.tgl_mulai_kerja > '2000-01-01' AND DATE(a.scan_date)<p.tgl_mulai_kerja")->fetchColumn();
     $unmatchedPins = $legacy->query("SELECT a.pin,COUNT(*) AS scan_count,MIN(a.scan_date) AS first_seen,MAX(a.scan_date) AS last_seen FROM att_log a LEFT JOIN pegawai p ON p.pegawai_pin=a.pin WHERE a.scan_date >= '2001-01-01 00:00:00' AND p.pegawai_id IS NULL GROUP BY a.pin ORDER BY a.pin")->fetchAll();
     $schedulePatternRows = $legacy->query("SELECT m.jdw_kerja_m_id,m.jdw_kerja_m_name,d.jdw_kerja_d_idx,d.jdw_kerja_d_hari,d.jdw_kerja_d_libur,d.jk_id,j.jk_name,j.jk_bcin,j.jk_ecout,j.jk_tol_late FROM jdw_kerja_m m LEFT JOIN jdw_kerja_d d ON d.jdw_kerja_m_id=m.jdw_kerja_m_id LEFT JOIN jam_kerja j ON j.jk_id=d.jk_id ORDER BY m.jdw_kerja_m_id,d.jdw_kerja_d_idx")->fetchAll();
     $assignmentRows = $legacy->query("SELECT pegawai_id,jdw_kerja_m_id,jdw_kerja_m_mulai FROM jdw_kerja_pegawai ORDER BY pegawai_id,jdw_kerja_m_mulai")->fetchAll();
@@ -70,6 +71,7 @@ try {
         'source_counts' => $counts,
         'scanlog_valid_date_count' => $validScans,
         'scanlog_placeholder_date_count' => $placeholderScans,
+        'scanlogs_before_employee_join_date' => $scansBeforeEmployment,
         'target_unit' => 'SDIT',
         'unmatched_source_pins' => $unmatchedPins,
         'schedule_pattern_details' => $schedulePatternRows,\n        'schedule_assignment_count' => count($assignmentRows),
@@ -77,6 +79,7 @@ try {
             'PIN dipertahankan sebagai teks.',
             'Data pegawai dengan PIN yang sudah ada tidak ditimpa.',
             'Scan dengan tanggal placeholder 2000-01-01/zero-date tidak dimasukkan ke riwayat absensi.',
+            'Scan yang lebih lama dari tanggal mulai kerja tetap diimpor sebagai data mentah, tetapi harus ditinjau sebelum dibuat rekap kehadiran.',
             'Kredensial aktivasi dan communication key mesin tidak dibaca atau dipindahkan.',
             'Jadwal lama hanya dianalisis; pola mingguan yang berbeda harus dipetakan sebelum dipakai untuk rekap.',
             'Impor scanlog menggunakan ID transaksi deterministik agar dapat dijalankan ulang tanpa menggandakan log.',
