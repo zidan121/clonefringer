@@ -376,8 +376,9 @@ if ($path === '/scanlogs/map-pin' && $method === 'POST') {
 }
 if ($path === '/scanlogs/import' && $method === 'POST') {
     $user=requireRole(['admin','operator']); requireCsrf(); $b=requestJson();
-    $rows=$b['rows']??null; $machine=($b['machine_id']??'')===''?null:filter_var($b['machine_id'],FILTER_VALIDATE_INT);
-    if (!is_array($rows) || count($rows)<1 || count($rows)>1000 || ($machine===false)) jsonResponse(422,['ok'=>false,'message'=>'Impor harus berisi 1–1000 baris dan mesin yang valid.']);
+    $rows=$b['rows']??null; $machine=filter_var($b['machine_id']??null,FILTER_VALIDATE_INT);
+    if (!is_array($rows) || count($rows)<1 || count($rows)>1000 || !$machine) jsonResponse(422,['ok'=>false,'message'=>'Pilih mesin sumber dan impor 1–1000 baris.']);
+    $machineCheck=database()->prepare('SELECT id FROM machines WHERE id=? AND status<>\'inactive\'');$machineCheck->execute([$machine]);if(!$machineCheck->fetchColumn())jsonResponse(422,['ok'=>false,'message'=>'Mesin sumber tidak ditemukan atau nonaktif.']);
     $pdo=database(); $inserted=0; $duplicates=0; $unmatched=0;
     try {
         $pdo->beginTransaction();
