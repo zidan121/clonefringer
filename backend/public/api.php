@@ -299,6 +299,12 @@ if ($path === '/attendance/process' && $method === 'POST') {
         $scan->execute([$from.' 00:00:00',date('Y-m-d',strtotime($to.' +1 day')).' 00:00:00']);
         $groups=[];
         foreach($scan->fetchAll() as $r){$day=substr($r['scanned_at'],0,10);$key=$r['employee_id'].'|'.$day;$groups[$key][]=$r;}
+        // Seed scheduled employee-days even when there is no fingerprint scan, so absences are visible.
+        $activeEmployees=$pdo->query("SELECT id FROM employees WHERE employee_status='active'")->fetchAll(PDO::FETCH_COLUMN);
+        for($cursor=strtotime($from);$cursor<=strtotime($to);$cursor=strtotime('+1 day',$cursor)){
+            $day=date('Y-m-d',$cursor);
+            foreach($activeEmployees as $activeId){$key=$activeId.'|'.$day;if(!isset($groups[$key]))$groups[$key]=[];}
+        }
         $employeeStmt=$pdo->prepare('SELECT id,unit_id FROM employees WHERE id=?');
         $assignment=$pdo->prepare('SELECT a.schedule_id,COALESCE(a.custom_start,s.start_time) AS start_time,COALESCE(a.custom_end,s.end_time) AS end_time,COALESCE(a.custom_tolerance,s.tolerance_minutes) AS tolerance_minutes,s.active_days,s.crosses_midnight FROM employee_schedule_assignments a JOIN work_schedules s ON s.id=a.schedule_id WHERE a.employee_id=? AND a.effective_from<=? AND (a.effective_to IS NULL OR a.effective_to>=?) ORDER BY a.effective_from DESC,a.id DESC LIMIT 1');
         $unitDefault=$pdo->prepare('SELECT d.schedule_id,s.start_time,s.end_time,s.tolerance_minutes,s.active_days,s.crosses_midnight FROM unit_schedule_defaults d JOIN work_schedules s ON s.id=d.schedule_id WHERE d.unit_id=? AND d.effective_from<=? AND (d.effective_to IS NULL OR d.effective_to>=?) ORDER BY d.effective_from DESC,d.id DESC LIMIT 1');
@@ -310,7 +316,7 @@ if ($path === '/attendance/process' && $method === 'POST') {
             [$employeeId,$day]=explode('|',$key,2);$employeeStmt->execute([$employeeId]);$emp=$employeeStmt->fetch();if(!$emp)continue;
             $assignment->execute([$employeeId,$day,$day]);$sch=$assignment->fetch();
             if(!$sch && $emp['unit_id']){$unitDefault->execute([$emp['unit_id'],$day,$day]);$sch=$unitDefault->fetch();}
-            $first=$logs[0]['scanned_at'];$last=$logs[count($logs)-1]['scanned_at'];$ids=array_map(static fn($x)=>(int)$x['id'],$logs);
+            $first=$logs[0]['scanned_at']??null;$last=$logs? $logs[count($logs)-1]['scanned_at']:null;$ids=array_map(static fn($x)=>(int)$x['id'],$logs);
             $status='hadir';$late=0;$early=0;$scheduleId=null;$detail=['rule'=>'first_scan_arrival_last_scan_departure','intermediate_scans_retained'=>true];
             if(!$sch){$status='jadwal_belum_diatur';}
             else {
@@ -323,6 +329,7 @@ if ($path === '/attendance/process' && $method === 'POST') {
                     else {
                         $exception->execute([$employeeId,date('Y-m-d',strtotime($day.' +1 day')).' 00:00:00',$day.' 00:00:00']);$ex=$exception->fetchColumn();
                         if($ex){$status='izin_disetujui';$detail['approved_exception']=$ex;}
+                        elseif(count($logs)===0){$status='tidak_hadir';}
                         else {
                             $expectedIn=$day.' '.$sch['start_time'];$expectedOut=$day.' '.$sch['end_time'];
                             $threshold=strtotime($expectedIn)+((int)$sch['tolerance_minutes']*60);
