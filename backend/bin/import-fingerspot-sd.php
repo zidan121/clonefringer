@@ -62,7 +62,7 @@ try {
     $placeholderScans = (int)$legacy->query("SELECT COUNT(*) FROM att_log WHERE DATE(scan_date)='2000-01-01' OR scan_date='0000-00-00 00:00:00'")->fetchColumn();
     $validScans = (int)$legacy->query("SELECT COUNT(*) FROM att_log WHERE scan_date >= '2001-01-01 00:00:00'")->fetchColumn();
     $unmatchedPins = $legacy->query("SELECT a.pin,COUNT(*) AS scan_count,MIN(a.scan_date) AS first_seen,MAX(a.scan_date) AS last_seen FROM att_log a LEFT JOIN pegawai p ON p.pegawai_pin=a.pin WHERE a.scan_date >= '2001-01-01 00:00:00' AND p.pegawai_id IS NULL GROUP BY a.pin ORDER BY a.pin")->fetchAll();
-    $schedulePatternRows = $legacy->query("SELECT m.jdw_kerja_m_id,m.jdw_kerja_m_name,d.jdw_kerja_d_idx,d.jdw_kerja_d_hari,d.jdw_kerja_d_libur,j.jk_name,j.jk_bcin,j.jk_ecout,j.jk_tol_late FROM jdw_kerja_m m LEFT JOIN jdw_kerja_d d ON d.jdw_kerja_m_id=m.jdw_kerja_m_id LEFT JOIN jam_kerja j ON j.jk_id=d.jk_id ORDER BY m.jdw_kerja_m_id,d.jdw_kerja_d_idx")->fetchAll();
+    $schedulePatternRows = $legacy->query("SELECT m.jdw_kerja_m_id,m.jdw_kerja_m_name,d.jdw_kerja_d_idx,d.jdw_kerja_d_hari,d.jdw_kerja_d_libur,d.jk_id,j.jk_name,j.jk_bcin,j.jk_ecout,j.jk_tol_late FROM jdw_kerja_m m LEFT JOIN jdw_kerja_d d ON d.jdw_kerja_m_id=m.jdw_kerja_m_id LEFT JOIN jam_kerja j ON j.jk_id=d.jk_id ORDER BY m.jdw_kerja_m_id,d.jdw_kerja_d_idx")->fetchAll();
     $assignmentRows = $legacy->query("SELECT pegawai_id,jdw_kerja_m_id,jdw_kerja_m_mulai FROM jdw_kerja_pegawai ORDER BY pegawai_id,jdw_kerja_m_mulai")->fetchAll();
     $report = [
         'mode' => $apply ? 'APPLY' : 'DRY_RUN',
@@ -217,8 +217,10 @@ try {
         'scanlogs_unmatched_pin' => $scanUnmatched,
         'scanlogs_already_present' => $scanDuplicates,
         'schedule_patterns_found' => $counts['jdw_kerja_m'],
-        'schedule_assignments_found' => $counts['jdw_kerja_pegawai'],
-        'schedule_import' => 'Belum dijalankan otomatis; perlu pemetaan pola per hari yang aman.',
+        'schedules_created' => $scheduleImported,
+        'employee_schedule_assignments_created' => $assignmentImported,
+        'employee_schedule_assignments_skipped' => $assignmentSkipped,
+        'schedule_patterns_requiring_manual_review' => array_filter($schedulePlan, static fn($p) => empty($p['valid'])),
     ];
     $report['status'] = 'committed';
     report($report);
