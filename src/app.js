@@ -17,6 +17,7 @@ function activate(page){
  if(page==="laporan"){content.innerHTML=reportPage();initReportPage();return;}
  if(page==="jadwal"){content.innerHTML=schedulePage();initSchedulePage();return;}
  if(page==="kalender"){content.innerHTML=calendarPage();initCalendarPage();return;}
+ if(page==="pengaturan"){content.innerHTML=settingsPage();initSettingsPage();return;}
  const item=pages[page]||pages.dashboard;content.innerHTML=`<section class="placeholder-page"><header class="page-heading"><h1>${item.title}</h1><p>${item.description||"Modul sedang disiapkan."}</p></header><div class="empty-state"><strong>Modul ${item.title} belum tersedia.</strong><p>Bagian ini akan diaktifkan setelah API dan alur datanya selesai.</p></div></section>`;
 }
 async function loadDashboardSummary(){
