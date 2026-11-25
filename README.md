@@ -24,4 +24,4 @@ Preview UI: buka `index.html` di browser modern.\n\nBackend awal: lihat `docs/DA
 - Integrasi perangkat dibuat melalui adapter per model/protokol; kompatibilitas harus diuji, bukan diasumsikan.
 
 ## Catatan
-Tahap awal ini merupakan kerangka UI dengan data contoh. UI masih memakai data demo/localStorage dan belum membaca database. Backend baru memiliki skema MySQL serta endpoint health-check; belum ada login, CRUD API, kalkulasi server, atau adapter mesin. Tidak ada koneksi ke database proprietary Fingerspot.
+Tahap awal ini merupakan kerangka UI dengan data contoh. UI masih memakai data demo/localStorage dan belum membaca database. Backend memiliki skema MySQL, login berbasis sesi, endpoint pegawai dasar, dan health-check. UI belum terhubung ke API; kalkulasi server dan adapter mesin belum tersedia. Tidak ada koneksi ke database proprietary Fingerspot.
