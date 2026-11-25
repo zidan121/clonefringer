@@ -1,4 +1,4 @@
-// Employee module: local demo data only. Replace with persistent backend in a later phase.
+// Employee module: database-backed through CLONEFRINGER API.
 const demoEmployees = [
  {pin:"001",name:"Ahmad Fauzi",birth:"1988-04-12",position:"Guru",department:"SDIT",office:"Grobogan",phone:"081234560001",email:"",address:"",gender:"Laki-laki",religion:"Islam",maritalStatus:"Menikah",education:"S1",bloodType:"O",children:2,joinDate:"2020-07-01",contractEnd:"",password:"",rfid:"",privilege:"User",status:"Aktif",schedule:"Reguler",fingerprints:2},
  {pin:"002",name:"Siti Aminah",birth:"1992-09-21",position:"Guru",department:"RAIT",office:"Grobogan",phone:"081234560002",email:"",address:"",gender:"Perempuan",religion:"Islam",maritalStatus:"Menikah",education:"S1",bloodType:"A",children:1,joinDate:"2021-07-01",contractEnd:"",password:"",rfid:"",privilege:"User",status:"Aktif",schedule:"Reguler",fingerprints:2},
@@ -6,7 +6,13 @@ const demoEmployees = [
  {pin:"004",name:"Dewi Lestari",birth:"1990-06-18",position:"Guru",department:"SMPIT",office:"Grobogan",phone:"081234560004",email:"",address:"",gender:"Perempuan",religion:"Islam",maritalStatus:"Menikah",education:"S1",bloodType:"AB",children:1,joinDate:"2022-07-01",contractEnd:"",password:"",rfid:"",privilege:"User",status:"Non Aktif",schedule:"Reguler",fingerprints:0},
  {pin:"005",name:"Rina Wulandari",birth:"1995-12-09",position:"Tata Usaha",department:"KBIT",office:"Grobogan",phone:"081234560005",email:"",address:"",gender:"Perempuan",religion:"Islam",maritalStatus:"Belum Menikah",education:"SMA",bloodType:"O",children:0,joinDate:"2023-07-01",contractEnd:"",password:"",rfid:"",privilege:"User",status:"Aktif",schedule:"Kantor",fingerprints:2}
 ];
-let employees = demoEmployees.map(x=>({...x}));
+let employees = [];
+let employeeApiReady = false;
+const employeeIds = new Map();
+const employeeStatusToUi = v => ({active:'Aktif',inactive:'Non Aktif',resigned:'Berhenti',terminated:'Berhenti'}[v]||'Aktif');
+const employeeStatusToDb = v => ({'Aktif':'active','Non Aktif':'inactive','Berhenti':'resigned'}[v]||'active');
+function mapEmployeeFromApi(x){employeeIds.set(String(x.pin),Number(x.id));return {pin:x.pin,name:x.full_name,birth:x.birth_date||'',position:x.position_name||'',department:x.department||x.unit_code||'',office:'',phone:x.phone||'',email:x.email||'',address:x.address||'',gender:x.gender==='male'?'Laki-laki':x.gender==='female'?'Perempuan':'',religion:x.religion||'',maritalStatus:x.marital_status||'',education:x.education||'',bloodType:x.blood_type||'',children:0,joinDate:x.join_date||'',contractEnd:x.contract_end||'',password:'',rfid:x.rfid||'',privilege:x.machine_privilege||'User',status:employeeStatusToUi(x.employee_status),schedule:'Belum ditetapkan',fingerprints:Number(x.fingerprint_count)||0};}
+async function loadEmployeesFromApi(){const result=await CfApi.request('/employees');employees=result.data.map(mapEmployeeFromApi);employeeApiReady=true;}
 let selectedPins = new Set();
 let category = "Aktif";
 const esc = value => String(value ?? "").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -16,7 +22,7 @@ function employeePage(){
   <aside class="employee-categories">
    <div class="category-title">Kategori pegawai</div>
    ${["Aktif","Detail pegawai","Non Aktif","Berhenti","Segera habis kontrak"].map((x,i)=>`<button class="category-button ${i===0?"selected":""}" data-category="${x}">${x}</button>`).join("")}
-   <div class="category-note">Data contoh lokal</div>
+   <div class="category-note">Data database</div>
   </aside>
   <section class="employee-main">
    <div class="employee-filter">
@@ -44,7 +50,7 @@ function employeePage(){
    <div class="employee-table-wrap"><table class="employee-table"><thead><tr>
     <th><input type="checkbox" id="select-all" aria-label="Pilih semua"></th><th>PIN</th><th>Nama</th><th>Tanggal Lahir</th><th>Jabatan</th><th>Departemen</th><th>Kantor</th><th>No. Telp</th><th>Privilege</th><th>Status</th><th>Jadwal</th><th>Sidik Jari</th>
    </tr></thead><tbody id="employee-rows"></tbody></table></div>
-   <div class="table-summary"><span id="employee-count"></span><span>Contoh data — belum tersimpan ke database</span></div>
+   <div class="table-summary"><span id="employee-count"></span><span id="employee-data-state">Memuat data database...</span></div>
    <div class="employee-actions">
     <button class="action-button" id="select-list">Daftar Pilihan (<span id="selected-count">0</span>)</button>
     <button class="action-button" id="change-status">Ganti Status ▾</button>
@@ -122,12 +128,12 @@ function initEmployeePage(){
  });
  $("add-employee").onclick=()=>openForm(null);
  $("edit-employee").onclick=()=>{const s=selected();if(s.length!==1)return alert("Pilih tepat satu pegawai untuk diubah.");openForm(s[0]);};
- $("delete-employee").onclick=()=>{const s=selected();if(!s.length)return alert("Pilih pegawai terlebih dahulu.");if(confirm(`Hapus ${s.length} data contoh dari tampilan ini?`)){employees=employees.filter(e=>!selectedPins.has(e.pin));selectedPins.clear();render();}};
- $("employee-form").onsubmit=e=>{e.preventDefault();const data=Object.fromEntries(new FormData(e.target));data.fingerprints=Number(data.fingerprints)||0;const duplicate=employees.some(x=>x.pin===data.pin&&x.pin!==editingPin);if(duplicate)return alert("PIN sudah digunakan.");if(editingPin){employees=employees.map(x=>x.pin===editingPin?data:x);selectedPins.delete(editingPin);}else employees.push(data);$("employee-dialog").close();render();};
+ $("delete-employee").onclick=async()=>{const s=selected();if(!s.length)return alert("Pilih pegawai terlebih dahulu.");if(!confirm(`Nonaktifkan ${s.length} pegawai terpilih? Riwayat absensi tetap dipertahankan.`))return;try{for(const emp of s){const id=employeeIds.get(String(emp.pin));await CfApi.request('/employees/'+id,{method:'DELETE'});}selectedPins.clear();await loadEmployeesFromApi();render();}catch(error){alert(error.message);}};
+ $("employee-form").onsubmit=async e=>{e.preventDefault();const form=e.target,data=Object.fromEntries(new FormData(form));data.fingerprints=Number(data.fingerprints)||0;const duplicate=employees.some(x=>x.pin===data.pin&&x.pin!==editingPin);if(duplicate)return alert("PIN sudah digunakan.");const payload={pin:data.pin,full_name:data.name,employee_status:employeeStatusToDb(data.status),department:data.department||null,position_name:data.position||null,join_date:data.joinDate||null,contract_end:data.contractEnd||null,phone:data.phone||null,email:data.email||null,gender:data.gender==="Laki-laki"?"male":data.gender==="Perempuan"?"female":null,birth_date:data.birth||null,religion:data.religion||null,marital_status:data.maritalStatus||null,education:data.education||null,blood_type:data.bloodType||null,address:data.address||null,machine_privilege:data.privilege||null,rfid:data.rfid||null,fingerprint_count:data.fingerprints,notes:null};const btn=form.querySelector('button[type="submit"]');btn.disabled=true;try{if(editingPin){const id=employeeIds.get(String(editingPin));await CfApi.request('/employees/'+id,{method:'PUT',body:JSON.stringify(payload)});}else{await CfApi.request('/employees',{method:'POST',body:JSON.stringify(payload)});}await loadEmployeesFromApi();selectedPins.clear();$("employee-dialog").close();render();}catch(error){alert(error.message);}finally{btn.disabled=false;}};
  const close=()=>$("employee-dialog").close();$("close-dialog").onclick=close;$("cancel-dialog").onclick=close;
  $("clear-filters").onclick=()=>{root.querySelectorAll(".filter-grid input,.filter-grid select").forEach(x=>x.value="");category="Semua";root.querySelectorAll(".category-button").forEach(x=>x.classList.toggle("selected",x.dataset.category==="Detail pegawai"));render();};
  $("select-list").onclick=()=>alert(selected().map(x=>x.pin+" — "+x.name).join("\n")||"Belum ada pegawai dipilih.");
- $("change-status").onclick=()=>{const s=selected();if(!s.length)return alert("Pilih pegawai terlebih dahulu.");const status=prompt("Masukkan status: Aktif, Non Aktif, atau Berhenti","Non Aktif");if(!["Aktif","Non Aktif","Berhenti"].includes(status))return;employees=employees.map(x=>selectedPins.has(x.pin)?{...x,status}:x);render();};
+ $("change-status").onclick=async()=>{const s=selected();if(!s.length)return alert("Pilih pegawai terlebih dahulu.");const status=prompt("Masukkan status: Aktif, Non Aktif, atau Berhenti","Non Aktif");if(!["Aktif","Non Aktif","Berhenti"].includes(status))return;try{for(const emp of s){const id=employeeIds.get(String(emp.pin));await CfApi.request('/employees/'+id,{method:'PUT',body:JSON.stringify({employee_status:employeeStatusToDb(status)})});}selectedPins.clear();await loadEmployeesFromApi();render();}catch(error){alert(error.message);}};
  $("schedule-info").onclick=()=>alert(selected().map(x=>x.name+": "+x.schedule).join("\n")||"Pilih pegawai untuk melihat jadwal.");
  $("unregistered").onclick=()=>{category="Semua";root.querySelectorAll(".filter-grid input,.filter-grid select").forEach(x=>x.value="");$("employee-rows").innerHTML=employees.filter(x=>!x.fingerprints).map(e=>`<tr><td></td><td>${esc(e.pin)}</td><td>${esc(e.name)}</td><td colspan="9">Belum terdaftar sidik jari</td></tr>`).join("")||'<tr><td colspan="12">Semua pegawai contoh memiliki data sidik jari.</td></tr>';};
  $("change-join-date").onclick=()=>alert("Tanggal masuk kerja akan tersedia pada form detail pegawai tahap berikutnya.");
@@ -135,5 +141,7 @@ function initEmployeePage(){
  $("export-employee").onclick=()=>{const cols=["pin","name","birth","position","department","office","phone","privilege","status","schedule","fingerprints"];const csv=[cols.join(","),...filtered().map(e=>cols.map(k=>'"'+String(e[k]??"").replace(/"/g,'""')+'"').join(","))].join("\r\n");const a=document.createElement("a");a.href=URL.createObjectURL(new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"}));a.download="clonefringer-pegawai.csv";a.click();URL.revokeObjectURL(a.href);};
  $("import-employee").onclick=()=>$("csv-file").click();
  $("csv-file").onchange=async e=>{const file=e.target.files[0];if(!file)return;const text=await file.text();const lines=text.replace(/^\ufeff/,"").split(/\r?\n/).filter(Boolean);const parse=line=>{const out=[];let value="",quoted=false;for(let i=0;i<line.length;i++){const c=line[i];if(c==='"'&&line[i+1]==='"'){value+='"';i++;}else if(c==='"')quoted=!quoted;else if(c===","&&!quoted){out.push(value);value="";}else value+=c;}out.push(value);return out;};const headers=parse(lines.shift()).map(x=>x.trim());const imported=lines.map(line=>{const vals=parse(line);return Object.fromEntries(headers.map((h,i)=>[h,vals[i]||""]));}).filter(x=>x.pin&&x.name);const existing=new Set(employees.map(x=>x.pin));const valid=imported.filter(x=>!existing.has(x.pin));if(confirm(`Ditemukan ${imported.length} baris, ${valid.length} PIN baru. Tambahkan data valid?`)){employees.push(...valid.map(x=>({...x,fingerprints:Number(x.fingerprints)||0})));render();}e.target.value="";};
+ $("employee-data-state").textContent="Terhubung ke database";
+ loadEmployeesFromApi().then(render).catch(error=>{ $("employee-data-state").textContent="Gagal memuat database"; $("employee-rows").innerHTML='<tr><td colspan="12" class="no-data">'+esc(error.message)+'</td></tr>'; });
  render();
 }
