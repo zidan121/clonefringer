@@ -56,4 +56,6 @@ Seluruh penulisan dilakukan dalam satu transaksi database. Jika terjadi kegagala
 - Backup ini memiliki scanlog bertanggal 2020–2021, sedangkan sebagian tanggal mulai kerja pegawai berada pada 2022. Importer menampilkan jumlah scan yang mendahului tanggal mulai kerja. Scan tersebut tetap dipertahankan sebagai data mentah, tetapi jangan dianggap sebagai kehadiran yang sah sebelum diverifikasi.
 - `shift_result` tidak dipindahkan sebagai scanlog karena merupakan hasil kalkulasi aplikasi lama.
 - Setelah impor, buka modul Pegawai dan Laporan, cocokkan PIN belum cocok, lalu atur jadwal. Jangan proses rekap sebelum jadwal SD diverifikasi.
+- Rekap tidak membuat ketidakhadiran sebelum tanggal mulai kerja atau setelah akhir kontrak. Scan di luar masa aktif pegawai ditandai `perlu_review_status_pegawai`, bukan dianggap hadir/absen normal.
+- Jika hanya ada satu scan pada hari kerja, hasil ditandai `perlu_review_scan_tunggal` karena jam pulang belum dapat dipastikan. Periksa rincian scan sebelum menetapkan status akhir.
 - Importer ini tidak menghubungkan mesin secara langsung; protokol perangkat perlu diuji terpisah.
