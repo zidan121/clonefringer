@@ -245,14 +245,20 @@ if ($path === '/scanlogs' && $method === 'GET') {
     if (!preg_match('/^\d{4}-\d{2}-\d{2}$/',$from) || !preg_match('/^\d{4}-\d{2}-\d{2}$/',$to) || $to < $from || (strtotime($to)-strtotime($from)) > 2678400) {
         jsonResponse(422,['ok'=>false,'message'=>'Rentang tanggal log tidak valid atau lebih dari 31 hari.']);
     }
-    $st=database()->prepare('SELECT r.id,r.machine_id,m.name AS machine_name,r.employee_id,e.full_name,r.pin,r.scanned_at,r.verify_method,r.device_event_code,r.device_transaction_id,r.source,r.imported_at FROM raw_scanlogs r LEFT JOIN machines m ON m.id=r.machine_id LEFT JOIN employees e ON e.id=r.employee_id WHERE r.scanned_at>=? AND r.scanned_at<? ORDER BY r.scanned_at ASC LIMIT 10000');
+    $st=database()->prepare('SELECT r.id,r.machine_id,m.name AS machine_name,COALESCE(r.employee_id,pm.employee_id) AS employee_id,e.full_name,r.pin,r.scanned_at,r.verify_method,r.device_event_code,r.device_transaction_id,r.source,r.imported_at FROM raw_scanlogs r LEFT JOIN machines m ON m.id=r.machine_id LEFT JOIN scanlog_pin_mappings pm ON pm.pin=r.pin LEFT JOIN employees e ON e.id=COALESCE(r.employee_id,pm.employee_id) WHERE r.scanned_at>=? AND r.scanned_at<? ORDER BY r.scanned_at ASC LIMIT 10000');
     $st->execute([$from.' 00:00:00',date('Y-m-d',strtotime($to.' +1 day')).' 00:00:00']);
     jsonResponse(200,['ok'=>true,'data'=>$st->fetchAll()]);
 }
 if ($path === '/scanlogs/unmatched' && $method === 'GET') {
     requireUser();
-    $st=database()->query("SELECT pin,COUNT(*) AS scan_count,MIN(scanned_at) AS first_seen,MAX(scanned_at) AS last_seen FROM raw_scanlogs WHERE employee_id IS NULL GROUP BY pin ORDER BY last_seen DESC");
+    $st=database()->query("SELECT r.pin,COUNT(*) AS scan_count,MIN(r.scanned_at) AS first_seen,MAX(r.scanned_at) AS last_seen FROM raw_scanlogs r LEFT JOIN scanlog_pin_mappings pm ON pm.pin=r.pin WHERE r.employee_id IS NULL AND pm.id IS NULL GROUP BY r.pin ORDER BY last_seen DESC");
     jsonResponse(200,['ok'=>true,'data'=>$st->fetchAll()]);
+}
+if ($path === '/scanlogs/map-pin' && $method === 'POST') {
+    $user=requireRole(['admin','operator']); requireCsrf(); $b=requestJson();
+    $pin=trim((string)($b['pin']??'')); $employee=filter_var($b['employee_id']??null,FILTER_VALIDATE_INT);
+    if($pin===''||strlen($pin)>50||!$employee)jsonResponse(422,['ok'=>false,'message'=>'PIN dan pegawai tujuan wajib dipilih.']);
+    try{$pdo=database();$check=$pdo->prepare('SELECT id FROM employees WHERE id=? AND employee_status<>\'terminated\'');$check->execute([$employee]);if(!$check->fetchColumn())jsonResponse(404,['ok'=>false,'message'=>'Pegawai tujuan tidak ditemukan.']);$beforeStmt=$pdo->prepare('SELECT * FROM scanlog_pin_mappings WHERE pin=?');$beforeStmt->execute([$pin]);$before=$beforeStmt->fetch()?:null;$pdo->prepare('INSERT INTO scanlog_pin_mappings (pin,employee_id,mapped_by,notes) VALUES (?,?,?,?) ON DUPLICATE KEY UPDATE employee_id=VALUES(employee_id),mapped_by=VALUES(mapped_by),mapped_at=CURRENT_TIMESTAMP,notes=VALUES(notes)')->execute([$pin,$employee,$user['id'],$b['notes']??null]);audit($pdo,(int)$user['id'],'map_pin','scanlog_pin_mapping',null,$before,['pin'=>$pin,'employee_id'=>$employee]);jsonResponse(200,['ok'=>true,'message'=>'PIN berhasil dipetakan. Log mentah tidak diubah; pemetaan berlaku pada proses rekap berikutnya.']);}catch(Throwable $e){error_log('[pin mapping] '.$e->getMessage());jsonResponse(500,['ok'=>false,'message'=>'Gagal menyimpan pemetaan PIN.']);}
 }
 if ($path === '/scanlogs/import' && $method === 'POST') {
     $user=requireRole(['admin','operator']); requireCsrf(); $b=requestJson();
@@ -262,12 +268,14 @@ if ($path === '/scanlogs/import' && $method === 'POST') {
     try {
         $pdo->beginTransaction();
         $lookup=$pdo->prepare('SELECT id FROM employees WHERE pin=? LIMIT 1');
+        $mapped=$pdo->prepare('SELECT employee_id FROM scanlog_pin_mappings WHERE pin=? LIMIT 1');
         $insert=$pdo->prepare('INSERT IGNORE INTO raw_scanlogs (machine_id,employee_id,pin,scanned_at,verify_method,device_event_code,device_transaction_id,source,raw_payload) VALUES (?,?,?,?,?,?,?,?,?)');
         foreach($rows as $row) {
             if (!is_array($row)) throw new InvalidArgumentException('Format salah satu baris log tidak valid.');
             $pin=trim((string)($row['pin']??'')); $at=(string)($row['scanned_at']??'');
             if ($pin==='' || strlen($pin)>50 || !preg_match('/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}$/',$at) || strtotime($at)===false) throw new InvalidArgumentException('Setiap baris wajib memiliki PIN dan waktu scan YYYY-MM-DD HH:MM:SS yang valid.');
             $lookup->execute([$pin]); $employee=$lookup->fetchColumn();
+            if(!$employee){$mapped->execute([$pin]);$employee=$mapped->fetchColumn();}
             $payload=json_encode($row,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
             $insert->execute([$machine,$employee?:null,$pin,str_replace('T',' ',$at),$row['verify_method']??null,$row['device_event_code']??null,($row['device_transaction_id']??'')===''?null:(string)$row['device_transaction_id'],'file_import',$payload]);
             if($insert->rowCount()>0){$inserted++;if(!$employee)$unmatched++;}else{$duplicates++;}
@@ -287,7 +295,7 @@ if ($path === '/attendance/process' && $method === 'POST') {
         $pdo->beginTransaction();
         $pdo->prepare("INSERT INTO processing_batches (period_start,period_end,status,ruleset_version,started_by,started_at) VALUES (?,?,'running','attendance-v1.0',?,NOW())")->execute([$from,$to,$user['id']]);
         $batch=(int)$pdo->lastInsertId();
-        $scan=$pdo->prepare('SELECT id,employee_id,pin,scanned_at FROM raw_scanlogs WHERE scanned_at>=? AND scanned_at<? AND employee_id IS NOT NULL ORDER BY employee_id,scanned_at,id');
+        $scan=$pdo->prepare('SELECT r.id,COALESCE(r.employee_id,pm.employee_id) AS employee_id,r.pin,r.scanned_at FROM raw_scanlogs r LEFT JOIN scanlog_pin_mappings pm ON pm.pin=r.pin WHERE r.scanned_at>=? AND r.scanned_at<? AND COALESCE(r.employee_id,pm.employee_id) IS NOT NULL ORDER BY COALESCE(r.employee_id,pm.employee_id),r.scanned_at,r.id');
         $scan->execute([$from.' 00:00:00',date('Y-m-d',strtotime($to.' +1 day')).' 00:00:00']);
         $groups=[];
         foreach($scan->fetchAll() as $r){$day=substr($r['scanned_at'],0,10);$key=$r['employee_id'].'|'.$day;$groups[$key][]=$r;}
