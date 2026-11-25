@@ -52,7 +52,8 @@ Seluruh penulisan dilakukan dalam satu transaksi database. Jika terjadi kegagala
 
 ## Batasan penting
 - Baris scan dengan tanggal placeholder `2000-01-01` atau zero-date tidak diimpor sebagai kehadiran. Jumlahnya ditampilkan dalam laporan.
-- Jadwal Fingerspot memiliki pola mingguan per hari. Skema CLONEFRINGER saat ini memakai jadwal aktif/hari dan penugasan efektif; importer tidak menebak pola jadwal yang berbeda. Jadwal perlu dipetakan dan diverifikasi sebelum rekap dijalankan.
+- Dua pola jadwal sumber (Guru dan Yayasan) dipetakan jika semua hari kerja aktif pada pola tersebut memiliki jam masuk, pulang, dan toleransi yang sama. Penugasan jadwal per pegawai ikut dipindahkan dengan tanggal efektif sumber. Pola dengan jam berbeda antarhari dilewati dan dilaporkan untuk peninjauan manual.
+- Backup ini memiliki scanlog bertanggal 2020–2021, sedangkan sebagian tanggal mulai kerja pegawai berada pada 2022. Importer menampilkan jumlah scan yang mendahului tanggal mulai kerja. Scan tersebut tetap dipertahankan sebagai data mentah, tetapi jangan dianggap sebagai kehadiran yang sah sebelum diverifikasi.
 - `shift_result` tidak dipindahkan sebagai scanlog karena merupakan hasil kalkulasi aplikasi lama.
 - Setelah impor, buka modul Pegawai dan Laporan, cocokkan PIN belum cocok, lalu atur jadwal. Jangan proses rekap sebelum jadwal SD diverifikasi.
 - Importer ini tidak menghubungkan mesin secara langsung; protokol perangkat perlu diuji terpisah.
