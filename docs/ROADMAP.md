@@ -19,8 +19,8 @@
 - [ ] Departemen, kantor, jabatan
 - [x] Master jam kerja, hari aktif, istirahat, dan toleransi (demo lokal)\n- [ ] Persistensi master jam kerja ke database
 - [ ] Jadwal normal, berpola, auto shift
-- [ ] Kalender dan hari libur
-- [x] Penugasan master jadwal per pegawai dan override jam/toleransi (demo lokal)\n- [ ] Default jadwal per unit dan integrasi kalkulasi
+- [x] UI kalender, CRUD hari libur/kegiatan dan dampak hari kerja (browser lokal)\n- [ ] Kalender nasional terverifikasi dan database
+- [x] Penugasan master jadwal per pegawai dan override jam/toleransi (demo lokal)\n- [x] Default jadwal per unit (browser lokal)\n- [x] Kalkulasi demo memakai jadwal individual, default unit, kalender, dan pengecualian disetujui\n- [ ] Uji data riil dan shift lintas hari
 
 ## Tahap 4 — Mesin dan transaksi
 - [x] Inventaris perangkat, tambah/ubah/hapus, parameter koneksi, ekspor CSV
