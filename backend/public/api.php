@@ -236,4 +236,116 @@ if ($path === '/unit-schedule-defaults' && $method === 'POST') {
     catch(PDOException $e){if($e->getCode()==='23000')jsonResponse(422,['ok'=>false,'message'=>'Unit atau master jadwal tidak ditemukan.']);error_log('[unit default create] '.$e->getMessage());jsonResponse(500,['ok'=>false,'message'=>'Gagal menyimpan default jadwal.']);}
 }
 
+
+/* Immutable fingerprint imports and explicit attendance processing. */
+if ($path === '/scanlogs' && $method === 'GET') {
+    requireUser();
+    $from = (string)($_GET['from'] ?? date('Y-m-01'));
+    $to = (string)($_GET['to'] ?? date('Y-m-d'));
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/',$from) || !preg_match('/^\d{4}-\d{2}-\d{2}$/',$to) || $to < $from || (strtotime($to)-strtotime($from)) > 2678400) {
+        jsonResponse(422,['ok'=>false,'message'=>'Rentang tanggal log tidak valid atau lebih dari 31 hari.']);
+    }
+    $st=database()->prepare('SELECT r.id,r.machine_id,m.name AS machine_name,r.employee_id,e.full_name,r.pin,r.scanned_at,r.verify_method,r.device_event_code,r.device_transaction_id,r.source,r.imported_at FROM raw_scanlogs r LEFT JOIN machines m ON m.id=r.machine_id LEFT JOIN employees e ON e.id=r.employee_id WHERE r.scanned_at>=? AND r.scanned_at<? ORDER BY r.scanned_at ASC LIMIT 10000');
+    $st->execute([$from.' 00:00:00',date('Y-m-d',strtotime($to.' +1 day')).' 00:00:00']);
+    jsonResponse(200,['ok'=>true,'data'=>$st->fetchAll()]);
+}
+if ($path === '/scanlogs/unmatched' && $method === 'GET') {
+    requireUser();
+    $st=database()->query("SELECT pin,COUNT(*) AS scan_count,MIN(scanned_at) AS first_seen,MAX(scanned_at) AS last_seen FROM raw_scanlogs WHERE employee_id IS NULL GROUP BY pin ORDER BY last_seen DESC");
+    jsonResponse(200,['ok'=>true,'data'=>$st->fetchAll()]);
+}
+if ($path === '/scanlogs/import' && $method === 'POST') {
+    $user=requireRole(['admin','operator']); requireCsrf(); $b=requestJson();
+    $rows=$b['rows']??null; $machine=($b['machine_id']??'')===''?null:filter_var($b['machine_id'],FILTER_VALIDATE_INT);
+    if (!is_array($rows) || count($rows)<1 || count($rows)>1000 || ($machine===false)) jsonResponse(422,['ok'=>false,'message'=>'Impor harus berisi 1–1000 baris dan mesin yang valid.']);
+    $pdo=database(); $inserted=0; $duplicates=0; $unmatched=0;
+    try {
+        $pdo->beginTransaction();
+        $lookup=$pdo->prepare('SELECT id FROM employees WHERE pin=? LIMIT 1');
+        $insert=$pdo->prepare('INSERT IGNORE INTO raw_scanlogs (machine_id,employee_id,pin,scanned_at,verify_method,device_event_code,device_transaction_id,source,raw_payload) VALUES (?,?,?,?,?,?,?,?,?)');
+        foreach($rows as $row) {
+            if (!is_array($row)) throw new InvalidArgumentException('Format salah satu baris log tidak valid.');
+            $pin=trim((string)($row['pin']??'')); $at=(string)($row['scanned_at']??'');
+            if ($pin==='' || strlen($pin)>50 || !preg_match('/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}$/',$at) || strtotime($at)===false) throw new InvalidArgumentException('Setiap baris wajib memiliki PIN dan waktu scan YYYY-MM-DD HH:MM:SS yang valid.');
+            $lookup->execute([$pin]); $employee=$lookup->fetchColumn();
+            $payload=json_encode($row,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+            $insert->execute([$machine,$employee?:null,$pin,str_replace('T',' ',$at),$row['verify_method']??null,$row['device_event_code']??null,($row['device_transaction_id']??'')===''?null:(string)$row['device_transaction_id'],'file_import',$payload]);
+            if($insert->rowCount()>0){$inserted++;if(!$employee)$unmatched++;}else{$duplicates++;}
+        }
+        audit($pdo,(int)$user['id'],'import','raw_scanlogs',null,null,['inserted'=>$inserted,'duplicates'=>$duplicates,'unmatched'=>$unmatched,'machine_id'=>$machine]);
+        $pdo->commit();
+        jsonResponse(201,['ok'=>true,'inserted'=>$inserted,'duplicates'=>$duplicates,'unmatched'=>$unmatched,'message'=>'Impor selesai. Data log mentah tidak dapat diedit atau dihapus.']);
+    } catch(InvalidArgumentException $e) { if($pdo->inTransaction())$pdo->rollBack(); jsonResponse(422,['ok'=>false,'message'=>$e->getMessage()]); }
+      catch(Throwable $e) { if($pdo->inTransaction())$pdo->rollBack(); error_log('[scanlog import] '.$e->getMessage()); jsonResponse(500,['ok'=>false,'message'=>'Impor gagal; transaksi dibatalkan. Periksa duplikasi ID transaksi dan konfigurasi database.']); }
+}
+if ($path === '/attendance/process' && $method === 'POST') {
+    $user=requireRole(['admin','operator']); requireCsrf(); $b=requestJson();
+    $from=(string)($b['from']??''); $to=(string)($b['to']??'');
+    if(!preg_match('/^\d{4}-\d{2}-\d{2}$/',$from)||!preg_match('/^\d{4}-\d{2}-\d{2}$/',$to)||$to<$from||(strtotime($to)-strtotime($from))>2678400) jsonResponse(422,['ok'=>false,'message'=>'Periode rekap wajib valid dan maksimal 31 hari.']);
+    $pdo=database();
+    try {
+        $pdo->beginTransaction();
+        $pdo->prepare("INSERT INTO processing_batches (period_start,period_end,status,ruleset_version,started_by,started_at) VALUES (?,?,'running','attendance-v1.0',?,NOW())")->execute([$from,$to,$user['id']]);
+        $batch=(int)$pdo->lastInsertId();
+        $scan=$pdo->prepare('SELECT id,employee_id,pin,scanned_at FROM raw_scanlogs WHERE scanned_at>=? AND scanned_at<? AND employee_id IS NOT NULL ORDER BY employee_id,scanned_at,id');
+        $scan->execute([$from.' 00:00:00',date('Y-m-d',strtotime($to.' +1 day')).' 00:00:00']);
+        $groups=[];
+        foreach($scan->fetchAll() as $r){$day=substr($r['scanned_at'],0,10);$key=$r['employee_id'].'|'.$day;$groups[$key][]=$r;}
+        $employeeStmt=$pdo->prepare('SELECT id,unit_id FROM employees WHERE id=?');
+        $assignment=$pdo->prepare('SELECT a.schedule_id,COALESCE(a.custom_start,s.start_time) AS start_time,COALESCE(a.custom_end,s.end_time) AS end_time,COALESCE(a.custom_tolerance,s.tolerance_minutes) AS tolerance_minutes,s.active_days,s.crosses_midnight FROM employee_schedule_assignments a JOIN work_schedules s ON s.id=a.schedule_id WHERE a.employee_id=? AND a.effective_from<=? AND (a.effective_to IS NULL OR a.effective_to>=?) ORDER BY a.effective_from DESC,a.id DESC LIMIT 1');
+        $unitDefault=$pdo->prepare('SELECT d.schedule_id,s.start_time,s.end_time,s.tolerance_minutes,s.active_days,s.crosses_midnight FROM unit_schedule_defaults d JOIN work_schedules s ON s.id=d.schedule_id WHERE d.unit_id=? AND d.effective_from<=? AND (d.effective_to IS NULL OR d.effective_to>=?) ORDER BY d.effective_from DESC,d.id DESC LIMIT 1');
+        $holiday=$pdo->prepare("SELECT COUNT(*) FROM calendar_events WHERE impact='non_working' AND start_date<=? AND end_date>=? AND (unit_id IS NULL OR unit_id=?)");
+        $exception=$pdo->prepare("SELECT exception_type FROM attendance_exceptions WHERE employee_id=? AND status='approved' AND start_at<? AND end_at>=? ORDER BY start_at LIMIT 1");
+        $save=$pdo->prepare('INSERT INTO attendance_daily_results (batch_id,employee_id,attendance_date,schedule_id,first_scan_at,last_scan_at,scan_count,attendance_status,late_minutes,early_leave_minutes,source_scan_ids,calculation_detail) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)');
+        $count=0;
+        foreach($groups as $key=>$logs){
+            [$employeeId,$day]=explode('|',$key,2);$employeeStmt->execute([$employeeId]);$emp=$employeeStmt->fetch();if(!$emp)continue;
+            $assignment->execute([$employeeId,$day,$day]);$sch=$assignment->fetch();
+            if(!$sch && $emp['unit_id']){$unitDefault->execute([$emp['unit_id'],$day,$day]);$sch=$unitDefault->fetch();}
+            $first=$logs[0]['scanned_at'];$last=$logs[count($logs)-1]['scanned_at'];$ids=array_map(static fn($x)=>(int)$x['id'],$logs);
+            $status='hadir';$late=0;$early=0;$scheduleId=null;$detail=['rule'=>'first_scan_arrival_last_scan_departure','intermediate_scans_retained'=>true];
+            if(!$sch){$status='jadwal_belum_diatur';}
+            else {
+                $scheduleId=(int)$sch['schedule_id'];$days=json_decode((string)$sch['active_days'],true)?:[];
+                $weekday=['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'][(int)date('w',strtotime($day))];
+                if(!in_array($weekday,$days,true)){$status='scan_di_hari_nonaktif';}
+                elseif((int)$sch['crosses_midnight']===1){$status='perlu_review_shift_lintas_hari';}
+                else {
+                    $holiday->execute([$day,$day,$emp['unit_id']]);if((int)$holiday->fetchColumn()>0){$status='hari_libur_nonkerja';}
+                    else {
+                        $exception->execute([$employeeId,date('Y-m-d',strtotime($day.' +1 day')).' 00:00:00',$day.' 00:00:00']);$ex=$exception->fetchColumn();
+                        if($ex){$status='izin_disetujui';$detail['approved_exception']=$ex;}
+                        else {
+                            $expectedIn=$day.' '.$sch['start_time'];$expectedOut=$day.' '.$sch['end_time'];
+                            $threshold=strtotime($expectedIn)+((int)$sch['tolerance_minutes']*60);
+                            $late=max(0,(int)floor((strtotime($first)-$threshold)/60));
+                            $early=max(0,(int)floor((strtotime($expectedOut)-strtotime($last))/60));
+                            if($late>0)$status='terlambat';elseif($early>0)$status='pulang_awal';
+                        }
+                    }
+                }
+            }
+            $detail['scan_ids']=$ids;$detail['scan_count']=count($logs);
+            $save->execute([$batch,$employeeId,$day,$scheduleId,$first,$last,count($logs),$status,$late,$early,json_encode($ids),json_encode($detail,JSON_UNESCAPED_UNICODE)]);
+            $count++;
+        }
+        $pdo->prepare("UPDATE processing_batches SET status='completed',finished_at=NOW(),row_count=? WHERE id=?")->execute([$count,$batch]);
+        audit($pdo,(int)$user['id'],'process','attendance_batch',$batch,null,['from'=>$from,'to'=>$to,'row_count'=>$count,'ruleset'=>'attendance-v1.0']);
+        $pdo->commit();
+        jsonResponse(201,['ok'=>true,'batch_id'=>$batch,'row_count'=>$count,'message'=>'Rekap selesai. Hasil disimpan sebagai batch baru; log fingerprint asli tetap utuh.']);
+    } catch(Throwable $e) { if($pdo->inTransaction())$pdo->rollBack(); error_log('[attendance process] '.$e->getMessage()); jsonResponse(500,['ok'=>false,'message'=>'Proses rekap gagal dan dibatalkan. Periksa konfigurasi jadwal dan database.']); }
+}
+if ($path === '/attendance/results' && $method === 'GET') {
+    requireUser();
+    $batch=filter_var($_GET['batch_id']??null,FILTER_VALIDATE_INT);
+    if(!$batch)jsonResponse(422,['ok'=>false,'message'=>'batch_id wajib dipilih.']);
+    $st=database()->prepare('SELECT r.id,r.employee_id,e.pin,e.full_name,r.attendance_date,r.schedule_id,s.name AS schedule_name,r.first_scan_at,r.last_scan_at,r.scan_count,r.attendance_status,r.late_minutes,r.early_leave_minutes,r.source_scan_ids,r.calculation_detail FROM attendance_daily_results r JOIN employees e ON e.id=r.employee_id LEFT JOIN work_schedules s ON s.id=r.schedule_id WHERE r.batch_id=? ORDER BY r.attendance_date,e.full_name');
+    $st->execute([$batch]);jsonResponse(200,['ok'=>true,'data'=>$st->fetchAll()]);
+}
+if ($path === '/attendance/batches' && $method === 'GET') {
+    requireUser();
+    $rows=database()->query('SELECT id,period_start,period_end,status,ruleset_version,started_at,finished_at,row_count,created_at FROM processing_batches ORDER BY id DESC LIMIT 100')->fetchAll();
+    jsonResponse(200,['ok'=>true,'data'=>$rows]);
+}
+
 jsonResponse(404,['ok'=>false,'message'=>'Endpoint tidak ditemukan.']);
