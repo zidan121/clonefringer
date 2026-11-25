@@ -233,4 +233,26 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 INSERT IGNORE INTO units (code,name) VALUES
 ('KBIT','KBIT'),('RAIT','RAIT'),('SDIT','SDIT'),('SMPIT','SMPIT'),('YAYASAN','Yayasan');
 
+
+
+-- Protect imported fingerprint transactions from accidental mutation.
+-- Corrections must be represented by a separate audited event, not by rewriting raw history.
+DELIMITER //
+CREATE TRIGGER trg_raw_scanlogs_no_update
+BEFORE UPDATE ON raw_scanlogs
+FOR EACH ROW
+BEGIN
+  SIGNAL SQLSTATE '45000'
+    SET MESSAGE_TEXT = 'Raw scanlogs are immutable; add a correction/audit event instead.';
+END//
+
+CREATE TRIGGER trg_raw_scanlogs_no_delete
+BEFORE DELETE ON raw_scanlogs
+FOR EACH ROW
+BEGIN
+  SIGNAL SQLSTATE '45000'
+    SET MESSAGE_TEXT = 'Raw scanlogs cannot be deleted through normal application operations.';
+END//
+DELIMITER ;
+
 SET FOREIGN_KEY_CHECKS=1;
