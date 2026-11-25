@@ -6,7 +6,7 @@ Aplikasi manajemen personalia dan absensi fingerprint mandiri. Proyek ini memban
 **Tahap 1 selesai sebagai preview UI; fondasi database dan API PHP mulai dibangun.**
 
 ## Menjalankan
-Preview UI: buka `index.html` di browser modern.\n\nBackend awal: lihat `docs/DATABASE-SETUP.md` untuk menyiapkan MySQL dan endpoint pemeriksaan koneksi.
+Jalankan melalui Apache/XAMPP dari `http://localhost/clonefringer/` (jangan buka file HTML langsung). Login diperlukan untuk masuk ke aplikasi.\n\nBackend awal: lihat `docs/DATABASE-SETUP.md` untuk menyiapkan MySQL dan endpoint pemeriksaan koneksi.
 
 ## Modul target
 - Dashboard
@@ -24,4 +24,4 @@ Preview UI: buka `index.html` di browser modern.\n\nBackend awal: lihat `docs/DA
 - Integrasi perangkat dibuat melalui adapter per model/protokol; kompatibilitas harus diuji, bukan diasumsikan.
 
 ## Catatan
-Tahap awal ini merupakan kerangka UI dengan data contoh. UI masih memakai data demo/localStorage dan belum membaca database. Backend memiliki skema MySQL, login berbasis sesi, API dasar pegawai, jam kerja, kalender, pengecualian, inventaris mesin, penugasan jadwal, default unit, dan health-check. UI belum terhubung ke API; kalkulasi server dan adapter mesin belum tersedia. Tidak ada koneksi ke database proprietary Fingerspot.
+Tahap awal ini merupakan kerangka UI dengan data contoh. UI masih memakai data demo/localStorage dan belum membaca database. Backend memiliki skema MySQL, login berbasis sesi, API dasar pegawai, jam kerja, kalender, pengecualian, inventaris mesin, penugasan jadwal, default unit, dan health-check. Modul Pegawai telah memakai API database. Modul lain masih dalam proses penghubungan; kalkulasi server dan adapter mesin belum tersedia. Tidak ada koneksi ke database proprietary Fingerspot.
