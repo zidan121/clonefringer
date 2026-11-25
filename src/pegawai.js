@@ -1,0 +1,121 @@
+// Employee module: local demo data only. Replace with persistent backend in a later phase.
+const demoEmployees = [
+ {pin:"001",name:"Ahmad Fauzi",birth:"1988-04-12",position:"Guru",department:"SDIT",office:"Grobogan",phone:"081234560001",privilege:"User",status:"Aktif",schedule:"Reguler",fingerprints:2},
+ {pin:"002",name:"Siti Aminah",birth:"1992-09-21",position:"Guru",department:"RAIT",office:"Grobogan",phone:"081234560002",privilege:"User",status:"Aktif",schedule:"Reguler",fingerprints:2},
+ {pin:"003",name:"Budi Santoso",birth:"1985-01-03",position:"Staf IT",department:"Yayasan",office:"Grobogan",phone:"081234560003",privilege:"Admin",status:"Aktif",schedule:"Kantor",fingerprints:1},
+ {pin:"004",name:"Dewi Lestari",birth:"1990-06-18",position:"Guru",department:"SMPIT",office:"Grobogan",phone:"081234560004",privilege:"User",status:"Non Aktif",schedule:"Reguler",fingerprints:0},
+ {pin:"005",name:"Rina Wulandari",birth:"1995-12-09",position:"Tata Usaha",department:"KBIT",office:"Grobogan",phone:"081234560005",privilege:"User",status:"Aktif",schedule:"Kantor",fingerprints:2}
+];
+let employees = demoEmployees.map(x=>({...x}));
+let selectedPins = new Set();
+let category = "Aktif";
+const esc = value => String(value ?? "").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function employeePage(){
+ return `
+ <section class="employee-page">
+  <aside class="employee-categories">
+   <div class="category-title">Kategori pegawai</div>
+   ${["Aktif","Detail pegawai","Non Aktif","Berhenti","Segera habis kontrak"].map((x,i)=>`<button class="category-button ${i===0?"selected":""}" data-category="${x}">${x}</button>`).join("")}
+   <div class="category-note">Data contoh lokal</div>
+  </aside>
+  <section class="employee-main">
+   <div class="employee-filter">
+    <div class="filter-title"><strong>Filter data</strong><button id="clear-filters">Bersihkan filter</button></div>
+    <div class="filter-grid">
+     <label>PIN<input id="filter-pin" placeholder="Cari PIN"></label>
+     <label>Nama<input id="filter-name" placeholder="Cari nama pegawai"></label>
+     <label>Jadwal<select id="filter-schedule"><option value="">Semua</option><option>Reguler</option><option>Kantor</option></select></label>
+     <label>Jabatan<select id="filter-position"><option value="">Semua</option><option>Guru</option><option>Staf IT</option><option>Tata Usaha</option></select></label>
+     <label>Departemen<select id="filter-department"><option value="">Semua</option><option>KBIT</option><option>RAIT</option><option>SDIT</option><option>SMPIT</option><option>Yayasan</option></select></label>
+     <label>Kantor<select id="filter-office"><option value="">Semua</option><option>Grobogan</option></select></label>
+     <label>Status pegawai<select id="filter-status"><option value="">Semua</option><option>Aktif</option><option>Non Aktif</option><option>Berhenti</option></select></label>
+     <label>Privilege<select id="filter-privilege"><option value="">Semua</option><option>User</option><option>Admin</option></select></label>
+    </div>
+   </div>
+   <div class="employee-toolbar">
+    <button class="action-button primary" id="add-employee">＋ Tambah Pegawai</button>
+    <button class="action-button" id="edit-employee">✎ Ubah</button>
+    <button class="action-button" id="delete-employee">Hapus</button>
+    <button class="action-button" id="import-employee">⇧ Import</button>
+    <button class="action-button" id="export-employee">⇩ Export CSV</button>
+    <button class="action-button" id="print-employee">Cetak</button>
+    <input type="file" id="csv-file" accept=".csv,text/csv" hidden>
+   </div>
+   <div class="employee-table-wrap"><table class="employee-table"><thead><tr>
+    <th><input type="checkbox" id="select-all" aria-label="Pilih semua"></th><th>PIN</th><th>Nama</th><th>Tanggal Lahir</th><th>Jabatan</th><th>Departemen</th><th>Kantor</th><th>No. Telp</th><th>Privilege</th><th>Status</th><th>Jadwal</th><th>Sidik Jari</th>
+   </tr></thead><tbody id="employee-rows"></tbody></table></div>
+   <div class="table-summary"><span id="employee-count"></span><span>Contoh data — belum tersimpan ke database</span></div>
+   <div class="employee-actions">
+    <button class="action-button" id="select-list">Daftar Pilihan (<span id="selected-count">0</span>)</button>
+    <button class="action-button" id="change-status">Ganti Status ▾</button>
+    <button class="action-button" id="schedule-info">Jadwal Pegawai</button>
+    <button class="action-button" id="unregistered">Pegawai Belum Registrasi</button>
+    <button class="action-button" id="change-join-date">Ubah Tanggal Masuk</button>
+   </div>
+  </section>
+ </section>
+ <dialog id="employee-dialog" class="employee-dialog"><form id="employee-form" method="dialog">
+  <div class="dialog-head"><strong id="dialog-title">Tambah Pegawai</strong><button type="button" id="close-dialog" aria-label="Tutup">×</button></div>
+  <div class="form-grid">
+   <label>PIN *<input name="pin" required maxlength="20"></label><label>Nama *<input name="name" required></label>
+   <label>Tanggal lahir<input name="birth" type="date"></label><label>Jabatan<input name="position"></label>
+   <label>Departemen<input name="department"></label><label>Kantor<input name="office"></label>
+   <label>No. telepon<input name="phone"></label><label>Privilege<select name="privilege"><option>User</option><option>Admin</option></select></label>
+   <label>Status<select name="status"><option>Aktif</option><option>Non Aktif</option><option>Berhenti</option></select></label>
+   <label>Jadwal<input name="schedule" value="Reguler"></label>
+   <label>Jumlah sidik jari<input name="fingerprints" type="number" min="0" max="10" value="0"></label>
+  </div>
+  <p class="form-hint">PIN harus unik. Data pada tahap ini hanya berada di memori browser.</p>
+  <div class="dialog-actions"><button type="button" class="action-button" id="cancel-dialog">Batal</button><button type="submit" class="action-button primary">Simpan</button></div>
+ </form></dialog>`;
+}
+function initEmployeePage(){
+ const root=document.querySelector(".employee-page"); if(!root)return;
+ const $=id=>document.getElementById(id);
+ const fields=["pin","name","schedule","position","department","office","status","privilege"];
+ let editingPin=null;
+ function filtered(){
+  const values={pin:$("filter-pin").value.toLowerCase(),name:$("filter-name").value.toLowerCase(),schedule:$("filter-schedule").value,position:$("filter-position").value,department:$("filter-department").value,office:$("filter-office").value,status:$("filter-status").value,privilege:$("filter-privilege").value};
+  return employees.filter(e=>(category==="Detail pegawai"||e.status===category||category==="Semua")&&fields.every(k=>!values[k]||String(e[k]||"").toLowerCase().includes(values[k])));
+ }
+ function render(){
+  const rows=filtered();
+  $("employee-rows").innerHTML=rows.map(e=>`<tr data-pin="${esc(e.pin)}" class="${selectedPins.has(e.pin)?"selected-row":""}"><td><input type="checkbox" class="row-check" data-pin="${esc(e.pin)}" ${selectedPins.has(e.pin)?"checked":""}></td><td>${esc(e.pin)}</td><td><button class="name-link" data-open="${esc(e.pin)}">${esc(e.name)}</button></td><td>${esc(e.birth||"—")}</td><td>${esc(e.position)}</td><td>${esc(e.department)}</td><td>${esc(e.office)}</td><td>${esc(e.phone)}</td><td>${esc(e.privilege)}</td><td><span class="status-pill ${e.status==="Aktif"?"is-active":""}">${esc(e.status)}</span></td><td>${esc(e.schedule)}</td><td>${Number(e.fingerprints)||0}</td></tr>`).join("")||'<tr><td colspan="12" class="no-data">Tidak ada pegawai yang cocok dengan filter.</td></tr>';
+  $("employee-count").textContent=`${rows.length} dari ${employees.length} pegawai`;
+  $("selected-count").textContent=selectedPins.size;
+  $("select-all").checked=rows.length>0&&rows.every(e=>selectedPins.has(e.pin));
+ }
+ function openForm(employee){
+  editingPin=employee?.pin||null; $("dialog-title").textContent=employee?"Ubah Pegawai":"Tambah Pegawai";
+  const form=$("employee-form");form.reset();
+  for(const [key,value] of Object.entries(employee||{})){if(form.elements[key])form.elements[key].value=value??"";}
+  if(!employee){form.elements.fingerprints.value=0;form.elements.schedule.value="Reguler";}
+  $("employee-dialog").showModal();
+ }
+ function selected(){return employees.filter(e=>selectedPins.has(e.pin));}
+ root.addEventListener("input",render);root.addEventListener("change",e=>{
+  if(e.target.matches(".row-check")){e.target.checked?selectedPins.add(e.target.dataset.pin):selectedPins.delete(e.target.dataset.pin);render();}
+  if(e.target.id==="select-all"){filtered().forEach(e=>e.target.checked?selectedPins.add(e.pin):selectedPins.delete(e.pin));render();}
+ });
+ root.addEventListener("click",e=>{
+  const cat=e.target.closest("[data-category]");if(cat){category=cat.dataset.category==="Detail pegawai"?"Semua":cat.dataset.category;root.querySelectorAll(".category-button").forEach(b=>b.classList.toggle("selected",b===cat));render();return;}
+  const open=e.target.closest("[data-open]");if(open){const emp=employees.find(x=>x.pin===open.dataset.open);openForm(emp);return;}
+  const row=e.target.closest("tr[data-pin]");if(row&&!e.target.closest("button,input")){const pin=row.dataset.pin;selectedPins.has(pin)?selectedPins.delete(pin):selectedPins.add(pin);render();}
+ });
+ $("add-employee").onclick=()=>openForm(null);
+ $("edit-employee").onclick=()=>{const s=selected();if(s.length!==1)return alert("Pilih tepat satu pegawai untuk diubah.");openForm(s[0]);};
+ $("delete-employee").onclick=()=>{const s=selected();if(!s.length)return alert("Pilih pegawai terlebih dahulu.");if(confirm(`Hapus ${s.length} data contoh dari tampilan ini?`)){employees=employees.filter(e=>!selectedPins.has(e.pin));selectedPins.clear();render();}};
+ $("employee-form").onsubmit=e=>{e.preventDefault();const data=Object.fromEntries(new FormData(e.target));data.fingerprints=Number(data.fingerprints)||0;const duplicate=employees.some(x=>x.pin===data.pin&&x.pin!==editingPin);if(duplicate)return alert("PIN sudah digunakan.");if(editingPin){employees=employees.map(x=>x.pin===editingPin?data:x);selectedPins.delete(editingPin);}else employees.push(data);$("employee-dialog").close();render();};
+ const close=()=>$("employee-dialog").close();$("close-dialog").onclick=close;$("cancel-dialog").onclick=close;
+ $("clear-filters").onclick=()=>{root.querySelectorAll(".filter-grid input,.filter-grid select").forEach(x=>x.value="");category="Semua";root.querySelectorAll(".category-button").forEach(x=>x.classList.toggle("selected",x.dataset.category==="Detail pegawai"));render();};
+ $("select-list").onclick=()=>alert(selected().map(x=>x.pin+" — "+x.name).join("\n")||"Belum ada pegawai dipilih.");
+ $("change-status").onclick=()=>{const s=selected();if(!s.length)return alert("Pilih pegawai terlebih dahulu.");const status=prompt("Masukkan status: Aktif, Non Aktif, atau Berhenti","Non Aktif");if(!["Aktif","Non Aktif","Berhenti"].includes(status))return;employees=employees.map(x=>selectedPins.has(x.pin)?{...x,status}:x);render();};
+ $("schedule-info").onclick=()=>alert(selected().map(x=>x.name+": "+x.schedule).join("\n")||"Pilih pegawai untuk melihat jadwal.");
+ $("unregistered").onclick=()=>{category="Semua";root.querySelectorAll(".filter-grid input,.filter-grid select").forEach(x=>x.value="");$("employee-rows").innerHTML=employees.filter(x=>!x.fingerprints).map(e=>`<tr><td></td><td>${esc(e.pin)}</td><td>${esc(e.name)}</td><td colspan="9">Belum terdaftar sidik jari</td></tr>`).join("")||'<tr><td colspan="12">Semua pegawai contoh memiliki data sidik jari.</td></tr>';};
+ $("change-join-date").onclick=()=>alert("Tanggal masuk kerja akan tersedia pada form detail pegawai tahap berikutnya.");
+ $("print-employee").onclick=()=>window.print();
+ $("export-employee").onclick=()=>{const cols=["pin","name","birth","position","department","office","phone","privilege","status","schedule","fingerprints"];const csv=[cols.join(","),...filtered().map(e=>cols.map(k=>'"'+String(e[k]??"").replace(/"/g,'""')+'"').join(","))].join("\r\n");const a=document.createElement("a");a.href=URL.createObjectURL(new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"}));a.download="clonefringer-pegawai.csv";a.click();URL.revokeObjectURL(a.href);};
+ $("import-employee").onclick=()=>$("csv-file").click();
+ $("csv-file").onchange=async e=>{const file=e.target.files[0];if(!file)return;const text=await file.text();const lines=text.replace(/^\ufeff/,"").split(/\r?\n/).filter(Boolean);const parse=line=>{const out=[];let value="",quoted=false;for(let i=0;i<line.length;i++){const c=line[i];if(c==='"'&&line[i+1]==='"'){value+='"';i++;}else if(c==='"')quoted=!quoted;else if(c===","&&!quoted){out.push(value);value="";}else value+=c;}out.push(value);return out;};const headers=parse(lines.shift()).map(x=>x.trim());const imported=lines.map(line=>{const vals=parse(line);return Object.fromEntries(headers.map((h,i)=>[h,vals[i]||""]));}).filter(x=>x.pin&&x.name);const existing=new Set(employees.map(x=>x.pin));const valid=imported.filter(x=>!existing.has(x.pin));if(confirm(`Ditemukan ${imported.length} baris, ${valid.length} PIN baru. Tambahkan data valid?`)){employees.push(...valid.map(x=>({...x,fingerprints:Number(x.fingerprints)||0})));render();}e.target.value="";};
+ render();
+}
