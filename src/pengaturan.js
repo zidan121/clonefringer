@@ -32,7 +32,7 @@ function initSettingsPage(){
   }catch(e){count.textContent='Gagal memuat';body.innerHTML='<tr><td colspan="6" class="no-data">'+esc(e.message)+'</td></tr>';}
  }
  function openNew(){
-  form.reset();form.elements.id.value='';form.elements.username.disabled=false;form.elements.is_active.value='1';
+  form.reset();form.elements.id.value='';form.elements.username.disabled=false;form.elements.role.disabled=false;form.elements.is_active.disabled=false;form.elements.is_active.value='1';
   document.querySelector('#user-dialog-title').textContent='Tambah pengguna';
   document.querySelector('#user-password-hint').textContent='Wajib diisi, minimal 10 karakter.';
   form.elements.password.required=true;document.querySelector('#user-form-message').textContent='';
