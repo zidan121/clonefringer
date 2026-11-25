@@ -7,6 +7,7 @@ function activate(page){navButtons.forEach(b=>{const active=b.dataset.page===pag
  if(page==="mesin"){content.innerHTML=machinePage();initMachinePage();return;}
  if(page==="laporan"){content.innerHTML=reportPage();initReportPage();return;}
  if(page==="jadwal"){content.innerHTML=schedulePage();initSchedulePage();return;}
+ if(page==="kalender"){content.innerHTML=calendarPage();initCalendarPage();return;}
  const item=pages[page]||pages.dashboard;content.innerHTML=`<section class="placeholder-page"><header class="page-heading"><h1>${item.title}</h1><p>${item.description||"Modul sedang disiapkan."}</p></header><div class="toolbar"><button class="primary" disabled>＋ Tambah (tahap berikutnya)</button><button disabled>Import</button><button disabled>Export</button><button disabled>Cetak</button></div><div class="empty-state"><strong>Modul ${item.title} belum diimplementasikan.</strong><p>Kerangka navigasi tersedia. Fungsi dan koneksi database dibangun pada tahap modul berikutnya.</p></div></section>`;
 }
 navButtons.forEach(b=>b.addEventListener("click",()=>activate(b.dataset.page)));
