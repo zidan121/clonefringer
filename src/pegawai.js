@@ -90,7 +90,11 @@ function initEmployeePage(){
  let editingPin=null;
  function filtered(){
   const values={pin:$("filter-pin").value.toLowerCase(),name:$("filter-name").value.toLowerCase(),schedule:$("filter-schedule").value,position:$("filter-position").value,department:$("filter-department").value,office:$("filter-office").value,status:$("filter-status").value,privilege:$("filter-privilege").value};
-  return employees.filter(e=>(category==="Detail pegawai"||e.status===category||category==="Semua")&&fields.every(k=>!values[k]||String(e[k]||"").toLowerCase().includes(values[k])));
+  return employees.filter(e=>{
+   const soon=category==="Segera habis kontrak"&&e.contractEnd&&new Date(e.contractEnd)>=new Date()&&new Date(e.contractEnd)<=new Date(Date.now()+30*86400000);
+   const categoryMatch=category==="Detail pegawai"||category==="Semua"||(category==="Segera habis kontrak"?soon:e.status===category);
+   return categoryMatch&&fields.every(k=>!values[k]||String(e[k]||"").toLowerCase().includes(values[k]));
+  });
  }
  function render(){
   const rows=filtered();
@@ -112,7 +116,7 @@ function initEmployeePage(){
   if(e.target.id==="select-all"){filtered().forEach(e=>e.target.checked?selectedPins.add(e.pin):selectedPins.delete(e.pin));render();}
  });
  root.addEventListener("click",e=>{
-  const cat=e.target.closest("[data-category]");if(cat){category=cat.dataset.category==="Detail pegawai"?"Semua":cat.dataset.category;root.querySelectorAll(".category-button").forEach(b=>b.classList.toggle("selected",b===cat));render();return;}
+  const cat=e.target.closest("[data-category]");if(cat){category=cat.dataset.category;root.querySelectorAll(".category-button").forEach(b=>b.classList.toggle("selected",b===cat));render();return;}
   const open=e.target.closest("[data-open]");if(open){const emp=employees.find(x=>x.pin===open.dataset.open);openForm(emp);return;}
   const row=e.target.closest("tr[data-pin]");if(row&&!e.target.closest("button,input")){const pin=row.dataset.pin;selectedPins.has(pin)?selectedPins.delete(pin):selectedPins.add(pin);render();}
  });
