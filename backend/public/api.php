@@ -188,4 +188,48 @@ if (preg_match('#^/exceptions/(\\d+)/decision$#',$path,$m) && $method==='POST') 
     catch(Throwable $e){error_log('[exception decision] '.$e->getMessage());jsonResponse(500,['ok'=>false,'message'=>'Gagal memproses keputusan.']);}
 }
 
+
+/* Machine inventory (network communication is deliberately not attempted here). */
+if ($path === '/machines' && $method === 'GET') {
+    requireUser();
+    $rows=database()->query('SELECT id,name,model,serial_number,host,port,connection_type,location,status,last_sync_at,notes,created_at,updated_at FROM machines ORDER BY name')->fetchAll();
+    jsonResponse(200,['ok'=>true,'data'=>$rows]);
+}
+if ($path === '/machines' && $method === 'POST') {
+    $user=requireRole(['admin','operator']);requireCsrf();$b=requestJson();
+    $name=trim((string)($b['name']??''));$host=trim((string)($b['host']??''));$port=filter_var($b['port']??4370,FILTER_VALIDATE_INT);
+    $conn=$b['connection_type']??'tcp';$status=$b['status']??'unknown';
+    if($name===''||$host===''||strlen($name)>120||strlen($host)>255||$port===false||$port<1||$port>65535||!in_array($conn,['tcp','udp','http','sdk','file'],true)||!in_array($status,['active','inactive','maintenance','unknown'],true))jsonResponse(422,['ok'=>false,'message'=>'Konfigurasi mesin tidak valid.']);
+    try{$pdo=database();$st=$pdo->prepare('INSERT INTO machines (name,model,serial_number,host,port,connection_type,location,status,notes) VALUES (?,?,?,?,?,?,?,?,?)');$st->execute([$name,$b['model']??null,$b['serial_number']??null,$host,$port,$conn,$b['location']??null,$status,$b['notes']??null]);$id=(int)$pdo->lastInsertId();audit($pdo,(int)$user['id'],'create','machine',$id,null,$b);jsonResponse(201,['ok'=>true,'id'=>$id,'message'=>'Data mesin tersimpan.']);}
+    catch(PDOException $e){if($e->getCode()==='23000')jsonResponse(409,['ok'=>false,'message'=>'Nomor seri mesin sudah terdaftar.']);error_log('[machine create] '.$e->getMessage());jsonResponse(500,['ok'=>false,'message'=>'Gagal menyimpan mesin.']);}
+}
+
+/* Per-employee schedule assignments with optional individual overrides. */
+if ($path === '/schedule-assignments' && $method === 'GET') {
+    requireUser();
+    $rows=database()->query('SELECT a.id,a.employee_id,e.pin,e.full_name,a.schedule_id,s.name AS schedule_name,a.effective_from,a.effective_to,a.custom_start,a.custom_end,a.custom_tolerance FROM employee_schedule_assignments a JOIN employees e ON e.id=a.employee_id JOIN work_schedules s ON s.id=a.schedule_id ORDER BY e.full_name,a.effective_from DESC')->fetchAll();
+    jsonResponse(200,['ok'=>true,'data'=>$rows]);
+}
+if ($path === '/schedule-assignments' && $method === 'POST') {
+    $user=requireRole(['admin','operator']);requireCsrf();$b=requestJson();
+    $employee=filter_var($b['employee_id']??null,FILTER_VALIDATE_INT);$schedule=filter_var($b['schedule_id']??null,FILTER_VALIDATE_INT);$from=$b['effective_from']??'';
+    $to=$b['effective_to']??null;
+    if(!$employee||!$schedule||!preg_match('/^\\d{4}-\\d{2}-\\d{2}$/',(string)$from)||($to!==null&&$to!==''&&(!preg_match('/^\\d{4}-\\d{2}-\\d{2}$/',(string)$to)||$to<$from)))jsonResponse(422,['ok'=>false,'message'=>'Penugasan jadwal tidak valid.']);
+    try{$pdo=database();$st=$pdo->prepare('INSERT INTO employee_schedule_assignments (employee_id,schedule_id,effective_from,effective_to,custom_start,custom_end,custom_tolerance) VALUES (?,?,?,?,?,?,?)');$st->execute([$employee,$schedule,$from,$to?:null,$b['custom_start']??null,$b['custom_end']??null,($b['custom_tolerance']??'')===''?null:($b['custom_tolerance']??null)]);$id=(int)$pdo->lastInsertId();audit($pdo,(int)$user['id'],'create','schedule_assignment',$id,null,$b);jsonResponse(201,['ok'=>true,'id'=>$id,'message'=>'Jadwal pegawai berhasil ditetapkan.']);}
+    catch(PDOException $e){if($e->getCode()==='23000')jsonResponse(422,['ok'=>false,'message'=>'Pegawai atau master jadwal tidak ditemukan.']);error_log('[assignment create] '.$e->getMessage());jsonResponse(500,['ok'=>false,'message'=>'Gagal menetapkan jadwal.']);}
+}
+if ($path === '/unit-schedule-defaults' && $method === 'GET') {
+    requireUser();
+    $rows=database()->query('SELECT d.id,d.unit_id,u.code AS unit_code,u.name AS unit_name,d.schedule_id,s.name AS schedule_name,d.effective_from,d.effective_to FROM unit_schedule_defaults d JOIN units u ON u.id=d.unit_id JOIN work_schedules s ON s.id=d.schedule_id ORDER BY u.name,d.effective_from DESC')->fetchAll();
+    jsonResponse(200,['ok'=>true,'data'=>$rows]);
+}
+if ($path === '/unit-schedule-defaults' && $method === 'POST') {
+    $user=requireRole(['admin','operator']);requireCsrf();$b=requestJson();
+    $unit=filter_var($b['unit_id']??null,FILTER_VALIDATE_INT);$schedule=filter_var($b['schedule_id']??null,FILTER_VALIDATE_INT);$from=$b['effective_from']??'';
+    $to=$b['effective_to']??null;
+    if(!$unit||!$schedule||!preg_match('/^\\d{4}-\\d{2}-\\d{2}$/',(string)$from)||($to!==null&&$to!==''&&(!preg_match('/^\\d{4}-\\d{2}-\\d{2}$/',(string)$to)||$to<$from)))jsonResponse(422,['ok'=>false,'message'=>'Default jadwal unit tidak valid.']);
+    try{$pdo=database();$st=$pdo->prepare('INSERT INTO unit_schedule_defaults (unit_id,schedule_id,effective_from,effective_to) VALUES (?,?,?,?)');$st->execute([$unit,$schedule,$from,$to?:null]);$id=(int)$pdo->lastInsertId();audit($pdo,(int)$user['id'],'create','unit_schedule_default',$id,null,$b);jsonResponse(201,['ok'=>true,'id'=>$id,'message'=>'Default jadwal unit tersimpan.']);}
+    catch(PDOException $e){if($e->getCode()==='23000')jsonResponse(422,['ok'=>false,'message'=>'Unit atau master jadwal tidak ditemukan.']);error_log('[unit default create] '.$e->getMessage());jsonResponse(500,['ok'=>false,'message'=>'Gagal menyimpan default jadwal.']);}
+}
+
 jsonResponse(404,['ok'=>false,'message'=>'Endpoint tidak ditemukan.']);
