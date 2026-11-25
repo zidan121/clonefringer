@@ -129,6 +129,12 @@ if (preg_match('#^/employees/(\d+)$#',$path,$m)) {
 }
 
 
+if ($path === '/units' && $method === 'GET') {
+    requireUser();
+    $rows=database()->query('SELECT id,code,name FROM units WHERE is_active=1 ORDER BY name')->fetchAll();
+    jsonResponse(200,['ok'=>true,'data'=>$rows]);
+}
+
 /* Work schedule master */
 if ($path === '/schedules' && $method === 'GET') {
     requireUser();
