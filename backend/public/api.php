@@ -322,10 +322,10 @@ if ($path === '/attendance/process' && $method === 'POST') {
             else {
                 $scheduleId=(int)$sch['schedule_id'];$days=json_decode((string)$sch['active_days'],true)?:[];
                 $weekday=['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'][(int)date('w',strtotime($day))];
-                if(!in_array($weekday,$days,true)){$status='scan_di_hari_nonaktif';}
+                if(!in_array($weekday,$days,true)){if(count($logs)===0)continue;$status='scan_di_hari_nonaktif';}
                 elseif((int)$sch['crosses_midnight']===1){$status='perlu_review_shift_lintas_hari';}
                 else {
-                    $holiday->execute([$day,$day,$emp['unit_id']]);if((int)$holiday->fetchColumn()>0){$status='hari_libur_nonkerja';}
+                    $holiday->execute([$day,$day,$emp['unit_id']]);if((int)$holiday->fetchColumn()>0){if(count($logs)===0)continue;$status='hari_libur_nonkerja';}
                     else {
                         $exception->execute([$employeeId,date('Y-m-d',strtotime($day.' +1 day')).' 00:00:00',$day.' 00:00:00']);$ex=$exception->fetchColumn();
                         if($ex){$status='izin_disetujui';$detail['approved_exception']=$ex;}
