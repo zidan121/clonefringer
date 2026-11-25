@@ -46,8 +46,8 @@
 - [ ] Komponen, formula, grup, proses gaji
 - [ ] Ekspor dan cetak
 
-## Tahap 7 — Backend dan data persisten\n- [x] Skema relasional MySQL untuk unit, pegawai, mesin, jadwal, kalender, pengecualian, scanlog mentah, batch proses, hasil harian, dan audit\n- [x] Bootstrap koneksi PDO dan endpoint health-check awal\n- [ ] Login, sesi aman, dan hak akses\n- [ ] CRUD API dan validasi server\n- [ ] Migrasi database berversi dan backup/restore teruji\n- [ ] Mesin kalkulasi server dengan batch dan audit\n\n## Tahap 8 — Operasional
-- [ ] Login dan hak akses
+## Tahap 7 — Backend dan data persisten\n- [x] Skema relasional MySQL untuk unit, pegawai, mesin, jadwal, kalender, pengecualian, scanlog mentah, batch proses, hasil harian, dan audit\n- [x] Bootstrap koneksi PDO dan endpoint health-check awal\n- [ ] Login, sesi aman, dan hak akses\n- [ ] CRUD API lengkap untuk seluruh master dan pengecualian; validasi server lanjutan\n- [ ] Migrasi database berversi dan backup/restore teruji\n- [ ] Mesin kalkulasi server dengan batch dan audit\n\n## Tahap 8 — Operasional
+- [x] Fondasi login berbasis sesi, role admin/operator/viewer, dan CSRF (API; UI login belum dibuat)\n- [x] API pegawai dasar: daftar, tambah, ubah, nonaktifkan dengan audit (belum terhubung ke UI)\n- [ ] Login dan hak akses
 - [ ] Backup/restore teruji
 - [ ] Migrasi database
 - [ ] Pengujian regresi dan dokumentasi instalasi
