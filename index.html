@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#dce8f4">
+<title>CLONEFRINGER — Personnel Management</title><link rel="stylesheet" href="src/styles.css">
+</head>
+<body><div class="app-shell">
+<header class="titlebar"><div class="window-mark"><span class="mark">C</span><strong>CLONEFRINGER</strong><small>PERSONNEL MANAGEMENT</small></div><div class="window-controls" aria-hidden="true"><span>—</span><span>▢</span><span class="close">×</span></div></header>
+<nav class="main-nav" aria-label="Menu utama">
+<button class="nav-item active" data-page="dashboard"><span class="nav-icon">⌂</span>Dashboard</button>
+<button class="nav-item" data-page="pegawai"><span class="nav-icon">♟</span>Pegawai</button>
+<button class="nav-item" data-page="pengecualian"><span class="nav-icon">⚑</span>Pengecualian</button>
+<button class="nav-item" data-page="mesin"><span class="nav-icon">▣</span>Mesin</button>
+<button class="nav-item" data-page="laporan"><span class="nav-icon">▤</span>Laporan</button>
+<button class="nav-item" data-page="pengaturan"><span class="nav-icon">⚙</span>Pengaturan</button>
+<div class="nav-spacer"></div><button class="help-button" title="Pusat bantuan">?</button><div class="account-label"><strong>CLONEFRINGER</strong><small>Personnel Suite</small></div>
+</nav>
+<main id="workspace" class="workspace"><aside class="side-rail"><button class="rail-tab selected" data-rail="info">Info</button><button class="rail-tab" data-rail="alur">Alur Aplikasi</button></aside>
+<section class="dashboard-area" id="page-content" aria-live="polite">
+<div class="welcome"><div class="welcome-title">SISTEM MANAJEMEN<br><span>Personalia & Absensi</span></div>
+<div class="flow-grid">
+<article class="flow-step"><b>01</b><span class="flow-symbol">▣＋</span><strong>Tambah mesin</strong><small>Daftarkan perangkat</small></article><i>→</i>
+<article class="flow-step"><b>02</b><span class="flow-symbol">◷＋</span><strong>Atur jam kerja</strong><small>Definisikan jam kerja</small></article><i>→</i>
+<article class="flow-step"><b>03</b><span class="flow-symbol">▦＋</span><strong>Buat jadwal</strong><small>Normal atau berpola</small></article><i>→</i>
+<article class="flow-step"><b>04</b><span class="flow-symbol">♟＋</span><strong>Daftarkan pegawai</strong><small>Atur data dan jadwal</small></article><i>→</i>
+<article class="flow-step"><b>05</b><span class="flow-symbol">⇧</span><strong>Sinkronkan ke mesin</strong><small>Setelah validasi</small></article>
+</div>
+<div class="brand-lockup"><span class="brand-mark">C</span><div><strong>CLONEFRINGER</strong><small>PERSONNEL MANAGEMENT</small></div></div>
+<div class="routine"><div class="routine-title">OPERASIONAL RUTIN</div><div class="routine-steps">
+<article><span>⇩</span><strong>Unduh scanlog</strong><small>Ambil transaksi mesin</small></article><b>←</b>
+<article><span>✎</span><strong>Kelola pengecualian</strong><small>Izin, cuti, lembur</small></article><b>←</b>
+<article><span>▤</span><strong>Proses absensi</strong><small>Hitung berdasarkan jadwal</small></article><b>←</b>
+<article><span>▧</span><strong>Laporan</strong><small>Rekap dan ekspor</small></article>
+</div></div></div>
+<aside class="tutorial-panel"><h2>Panduan aplikasi</h2>
+<div class="tutorial-card"><b>01. Persiapan awal</b><div class="video-placeholder">▶</div><small>Daftarkan mesin, jam kerja, dan jadwal.</small></div>
+<div class="tutorial-card"><b>02. Pengelolaan pegawai</b><div class="video-placeholder">▶</div><small>Kelola identitas dan penempatan pegawai.</small></div>
+<div class="tutorial-card"><b>03. Proses absensi</b><div class="video-placeholder">▶</div><small>Unduh transaksi dan proses laporan.</small></div></aside>
+</section></main>
+<footer class="statusbar"><span class="status-user"><i></i> admin</span><span>App: <b>1.0.0-dev</b></span><span>DB: <b>belum terhubung</b></span><span>Server: <b>lokal</b></span><span class="status-spacer"></span><span>Status: <b>UI preview</b></span></footer>
+</div><script src="src/app.js"></script></body></html>
