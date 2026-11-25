@@ -124,4 +124,68 @@ if (preg_match('#^/employees/(\d+)$#',$path,$m)) {
     }
 }
 
+
+/* Work schedule master */
+if ($path === '/schedules' && $method === 'GET') {
+    requireUser();
+    $st=database()->query('SELECT id,code,name,start_time,end_time,break_start,break_end,tolerance_minutes,crosses_midnight,active_days,is_active FROM work_schedules ORDER BY name');
+    $rows=$st->fetchAll();
+    foreach($rows as &$row){$row['active_days']=json_decode((string)$row['active_days'],true) ?: []; $row['is_active']=(bool)$row['is_active']; $row['crosses_midnight']=(bool)$row['crosses_midnight'];}
+    jsonResponse(200,['ok'=>true,'data'=>$rows]);
+}
+if ($path === '/schedules' && $method === 'POST') {
+    $user=requireRole(['admin','operator']); requireCsrf(); $b=requestJson();
+    $code=trim((string)($b['code']??'')); $name=trim((string)($b['name']??''));
+    $start=(string)($b['start_time']??''); $end=(string)($b['end_time']??'');
+    $days=$b['active_days']??[];
+    if($code===''||$name===''||strlen($code)>40||strlen($name)>120||!preg_match('/^([01]\\d|2[0-3]):[0-5]\\d(:[0-5]\\d)?$/',$start)||!preg_match('/^([01]\\d|2[0-3]):[0-5]\\d(:[0-5]\\d)?$/',$end)||!is_array($days)||!$days) jsonResponse(422,['ok'=>false,'message'=>'Kode, nama, jam, dan hari aktif wajib valid.']);
+    $validDays=['Senin','Selasa','Rabu','Kamis','Jumat','Sabtu','Minggu'];
+    if(array_diff($days,$validDays)) jsonResponse(422,['ok'=>false,'message'=>'Daftar hari aktif tidak valid.']);
+    $tol=filter_var($b['tolerance_minutes']??0,FILTER_VALIDATE_INT);
+    if($tol===false||$tol<0||$tol>600) jsonResponse(422,['ok'=>false,'message'=>'Toleransi harus 0–600 menit.']);
+    try{
+        $pdo=database();$st=$pdo->prepare('INSERT INTO work_schedules (code,name,start_time,end_time,break_start,break_end,tolerance_minutes,crosses_midnight,active_days,is_active) VALUES (?,?,?,?,?,?,?,?,?,1)');
+        $st->execute([$code,$name,$start,$end,$b['break_start']??null,$b['break_end']??null,$tol,!empty($b['crosses_midnight'])?1:0,json_encode(array_values(array_unique($days)),JSON_UNESCAPED_UNICODE)]);
+        $id=(int)$pdo->lastInsertId();audit($pdo,(int)$user['id'],'create','work_schedule',$id,null,$b);
+        jsonResponse(201,['ok'=>true,'id'=>$id,'message'=>'Jam kerja berhasil dibuat.']);
+    }catch(PDOException $e){if($e->getCode()==='23000')jsonResponse(409,['ok'=>false,'message'=>'Kode jam kerja sudah digunakan.']);error_log('[schedule create] '.$e->getMessage());jsonResponse(500,['ok'=>false,'message'=>'Gagal membuat jam kerja.']);}
+}
+
+/* Calendar events */
+if ($path === '/calendar' && $method === 'GET') {
+    requireUser();
+    $st=database()->query('SELECT c.id,c.name,c.event_type,c.unit_id,u.code AS unit_code,c.start_date,c.end_date,c.impact,c.notes FROM calendar_events c LEFT JOIN units u ON u.id=c.unit_id ORDER BY c.start_date DESC LIMIT 1000');
+    jsonResponse(200,['ok'=>true,'data'=>$st->fetchAll()]);
+}
+if ($path === '/calendar' && $method === 'POST') {
+    $user=requireRole(['admin','operator']);requireCsrf();$b=requestJson();
+    $name=trim((string)($b['name']??''));$type=$b['event_type']??'';$impact=$b['impact']??'non_working';
+    $start=$b['start_date']??'';$end=$b['end_date']??'';
+    if($name===''||strlen($name)>180||!in_array($type,['national_holiday','foundation_holiday','unit_holiday','special_activity'],true)||!in_array($impact,['non_working','working'],true)||!preg_match('/^\\d{4}-\\d{2}-\\d{2}$/',(string)$start)||!preg_match('/^\\d{4}-\\d{2}-\\d{2}$/',(string)$end)||$end<$start)jsonResponse(422,['ok'=>false,'message'=>'Data kalender tidak valid.']);
+    try{$pdo=database();$st=$pdo->prepare('INSERT INTO calendar_events (name,event_type,unit_id,start_date,end_date,impact,notes,created_by) VALUES (?,?,?,?,?,?,?,?)');$st->execute([$name,$type,($b['unit_id']??'')===''?null:($b['unit_id']??null),$start,$end,$impact,$b['notes']??null,$user['id']]);$id=(int)$pdo->lastInsertId();audit($pdo,(int)$user['id'],'create','calendar_event',$id,null,$b);jsonResponse(201,['ok'=>true,'id'=>$id,'message'=>'Kegiatan kalender disimpan.']);}
+    catch(PDOException $e){error_log('[calendar create] '.$e->getMessage());jsonResponse(500,['ok'=>false,'message'=>'Gagal menyimpan kalender.']);}
+}
+
+/* Attendance exceptions and approvals */
+if ($path === '/exceptions' && $method === 'GET') {
+    requireUser();
+    $st=database()->query('SELECT x.id,x.employee_id,e.pin,e.full_name,x.exception_type,x.start_at,x.end_at,x.status,x.reason,x.replacement_schedule_id,x.approved_by,x.approved_at FROM attendance_exceptions x JOIN employees e ON e.id=x.employee_id ORDER BY x.start_at DESC LIMIT 1000');
+    jsonResponse(200,['ok'=>true,'data'=>$st->fetchAll()]);
+}
+if ($path === '/exceptions' && $method === 'POST') {
+    $user=requireRole(['admin','operator']);requireCsrf();$b=requestJson();
+    $employeeId=filter_var($b['employee_id']??null,FILTER_VALIDATE_INT);
+    $type=$b['exception_type']??'';$start=$b['start_at']??'';$end=$b['end_at']??'';
+    $types=['leave','sick','permission','annual_leave','collective_leave','schedule_change','hours_change','shift_swap','overtime','extra_work'];
+    if(!$employeeId||!in_array($type,$types,true)||!is_string($start)||!is_string($end)||strtotime($start)===false||strtotime($end)===false||strtotime($end)<strtotime($start))jsonResponse(422,['ok'=>false,'message'=>'Pegawai, jenis, dan rentang waktu pengecualian wajib valid.']);
+    try{$pdo=database();$st=$pdo->prepare("INSERT INTO attendance_exceptions (employee_id,exception_type,start_at,end_at,status,reason,replacement_schedule_id,created_by) VALUES (?,?,?,?,'pending',?,?,?)");$st->execute([$employeeId,$type,$start,$end,$b['reason']??null,($b['replacement_schedule_id']??'')===''?null:($b['replacement_schedule_id']??null),$user['id']]);$id=(int)$pdo->lastInsertId();audit($pdo,(int)$user['id'],'create','attendance_exception',$id,null,$b);jsonResponse(201,['ok'=>true,'id'=>$id,'message'=>'Pengajuan tersimpan dan menunggu persetujuan.']);}
+    catch(PDOException $e){if($e->getCode()==='23000')jsonResponse(422,['ok'=>false,'message'=>'Pegawai atau jadwal pengganti tidak ditemukan.']);error_log('[exception create] '.$e->getMessage());jsonResponse(500,['ok'=>false,'message'=>'Gagal menyimpan pengecualian.']);}
+}
+if (preg_match('#^/exceptions/(\\d+)/decision$#',$path,$m) && $method==='POST') {
+    $user=requireRole(['admin']);requireCsrf();$id=(int)$m[1];$b=requestJson();$decision=$b['status']??'';
+    if(!in_array($decision,['approved','rejected'],true))jsonResponse(422,['ok'=>false,'message'=>'Keputusan harus approved atau rejected.']);
+    try{$pdo=database();$st=$pdo->prepare("SELECT * FROM attendance_exceptions WHERE id=?");$st->execute([$id]);$before=$st->fetch();if(!$before)jsonResponse(404,['ok'=>false,'message'=>'Pengajuan tidak ditemukan.']);if($before['status']!=='pending')jsonResponse(409,['ok'=>false,'message'=>'Hanya pengajuan pending yang dapat diputuskan.']);$pdo->prepare('UPDATE attendance_exceptions SET status=?,approved_by=?,approved_at=NOW() WHERE id=?')->execute([$decision,$user['id'],$id]);audit($pdo,(int)$user['id'],'decision','attendance_exception',$id,$before,['status'=>$decision]);jsonResponse(200,['ok'=>true,'message'=>'Keputusan pengajuan disimpan.']);}
+    catch(Throwable $e){error_log('[exception decision] '.$e->getMessage());jsonResponse(500,['ok'=>false,'message'=>'Gagal memproses keputusan.']);}
+}
+
 jsonResponse(404,['ok'=>false,'message'=>'Endpoint tidak ditemukan.']);
