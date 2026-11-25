@@ -23,7 +23,7 @@ Import `database/schema.sql` ke database tersebut. Sesuaikan port MySQL dengan i
 
 ## 2. Konfigurasi PHP
 
-Atur environment variables sesuai server:
+Atur environment variables di konfigurasi Apache/PHP sesuai server (jangan commit nilainya):
 
 - `CLONEFRINGER_DB_HOST`
 - `CLONEFRINGER_DB_PORT`
@@ -35,7 +35,7 @@ Jangan simpan password database di repository atau folder publik.
 
 ## 3. Uji koneksi
 
-Arahkan web server ke folder `backend/public` untuk API, lalu akses `/api/health`. Respons `database: connected` menandakan PHP dapat membuka koneksi PDO dan menjalankan query sederhana.
+Untuk XAMPP, letakkan repository di `C:\\xampp\\htdocs\\clonefringer`, aktifkan Apache dan MySQL, lalu akses `http://localhost/clonefringer/`. File `.htaccess` di root akan meneruskan `/api/*` ke PHP API dan memblokir akses langsung ke file konfigurasi/database. Aktifkan modul Apache `mod_rewrite` dan `AllowOverride All` pada konfigurasi direktori. Pastikan PHP 8.1+ dan ekstensi `pdo_mysql` aktif. Respons `database: connected` menandakan PHP dapat membuka koneksi PDO dan menjalankan query sederhana.
 
 Jika memakai PHP built-in server untuk uji lokal dari root repository:
 
@@ -43,7 +43,7 @@ Jika memakai PHP built-in server untuk uji lokal dari root repository:
 php -S 127.0.0.1:8081 -t backend/public backend/public/router.php
 ```
 
-Buka `http://127.0.0.1:8081/api/health`. Router development akan meneruskan seluruh path API. Untuk Apache, file `backend/public/.htaccess` menyediakan rewrite ke `api.php`. Nginx perlu konfigurasi rewrite/location yang setara.\n\n## 3a. Buat akun admin pertama\n\nSetelah schema diimpor dan environment database tersedia, jalankan dari root repository:\n\n```bash\nCLONEFRINGER_INITIAL_ADMIN_PASSWORD='PASSWORD_PANJANG_MINIMAL_12_KARAKTER' php backend/bin/create-admin.php\n```\n\nMasukkan username dan nama admin saat diminta. Password dibaca dari environment, bukan diketik ke prompt. Jangan menaruh password asli di file atau riwayat perintah shell; gunakan environment sementara yang aman pada sistem Anda. Script hanya mengizinkan pembuatan admin bila tabel pengguna masih kosong.\n\n## 3b. Endpoint awal\n\n- `POST /api/auth/login` — menerima JSON `username` dan `password`.\n- `GET /api/auth/me` — memeriksa sesi aktif dan mengembalikan token CSRF.\n- `POST /api/auth/logout` — wajib mengirim header `X-CSRF-Token`.\n- `GET /api/employees?q=...` — daftar pegawai (maksimal 500).\n- `POST /api/employees` — tambah pegawai, role admin/operator.\n- `PUT /api/employees/{id}` — ubah pegawai, role admin/operator.\n- `DELETE /api/employees/{id}` — menonaktifkan pegawai (admin saja), bukan menghapus riwayat.\n\nSemua request tulis setelah login wajib mengirim header `X-CSRF-Token` dari respons login atau `/auth/me`. Sesi menggunakan cookie HttpOnly dan SameSite Strict. Gunakan HTTPS di server yang diakses melalui jaringan.
+Buka `http://127.0.0.1:8081/api/health`. Router development akan meneruskan seluruh path API. Untuk Apache/XAMPP, root `.htaccess` meneruskan endpoint API ke front controller.\n\n## 3a. Buat akun admin pertama\n\nSetelah schema diimpor dan environment database tersedia, jalankan dari root repository:\n\n```bash\nCLONEFRINGER_INITIAL_ADMIN_PASSWORD='PASSWORD_PANJANG_MINIMAL_12_KARAKTER' php backend/bin/create-admin.php\n```\n\nMasukkan username dan nama admin saat diminta. Password dibaca dari environment, bukan diketik ke prompt. Jangan menaruh password asli di file atau riwayat perintah shell; gunakan environment sementara yang aman pada sistem Anda. Script hanya mengizinkan pembuatan admin bila tabel pengguna masih kosong.\n\n## 3b. Endpoint awal\n\n- `POST /api/auth/login` — menerima JSON `username` dan `password`.\n- `GET /api/auth/me` — memeriksa sesi aktif dan mengembalikan token CSRF.\n- `POST /api/auth/logout` — wajib mengirim header `X-CSRF-Token`.\n- `GET /api/employees?q=...` — daftar pegawai (maksimal 500).\n- `POST /api/employees` — tambah pegawai, role admin/operator.\n- `PUT /api/employees/{id}` — ubah pegawai, role admin/operator.\n- `DELETE /api/employees/{id}` — menonaktifkan pegawai (admin saja), bukan menghapus riwayat.\n\nSemua request tulis setelah login wajib mengirim header `X-CSRF-Token` dari respons login atau `/auth/me`. Sesi menggunakan cookie HttpOnly dan SameSite Strict. Gunakan HTTPS di server yang diakses melalui jaringan.
 
 ## 4. Prinsip data penting
 
@@ -53,7 +53,7 @@ Buka `http://127.0.0.1:8081/api/health`. Router development akan meneruskan selu
 - Jadwal pegawai memiliki rentang berlaku. Jika tidak ada penugasan individual, aplikasi dapat memakai default unit.
 - Perangkat fingerprint belum dihubungkan. Adapter harus dibuat dan diuji sesuai merek, model, firmware, serta protokol perangkat sebenarnya.
 
-## Status
+## Hubungkan UI ke API\n\nUI memanggil API pada origin yang sama dengan prefix `/api`. Karena itu, jalankan frontend dan API pada host yang sama. Jangan membuka `index.html` langsung dengan skema `file://`; gunakan Apache melalui alamat localhost.\n\n## Status
 
 Ini baru skema dan endpoint pemeriksaan kesehatan koneksi. Belum tersedia login, CRUD API, sinkronisasi perangkat, mesin kalkulasi server, maupun migrasi otomatis. Jangan gunakan untuk absensi produksi sebelum seluruh fungsi tersebut selesai diuji.
 
