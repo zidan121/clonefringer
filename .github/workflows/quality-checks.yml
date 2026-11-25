@@ -1,0 +1,25 @@
+name: CLONEFRINGER quality checks
+
+on:
+  pull_request:
+    branches: [work/initial-foundation]
+  push:
+    branches: [work/fingerspot-sd-importer]
+
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: PHP syntax
+        run: |
+          find backend -type f -name '*.php' -print0 | xargs -0 -n1 php -l
+      - name: JavaScript syntax
+        run: |
+          for file in src/*.js; do node --check "$file"; done
