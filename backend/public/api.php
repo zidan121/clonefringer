@@ -446,10 +446,16 @@ if ($path === '/attendance/process' && $method === 'POST') {
                         elseif(count($logs)===0){$status='tidak_hadir';}
                         else {
                             $expectedIn=$day.' '.$sch['start_time'];$expectedOut=$day.' '.$sch['end_time'];
-                            $threshold=strtotime($expectedIn)+((int)$sch['tolerance_minutes']*60);
-                            $late=max(0,(int)floor((strtotime($first)-$threshold)/60));
-                            $early=max(0,(int)floor((strtotime($expectedOut)-strtotime($last))/60));
-                            if($late>0)$status='terlambat';elseif($early>0)$status='pulang_awal';
+                            if(count($logs)===1){
+                                // A single scan cannot establish both arrival and departure; keep it for review.
+                                $status='perlu_review_scan_tunggal';
+                                $detail['review_reason']='Hanya ada satu scan; waktu pulang belum dapat dipastikan.';
+                            }else{
+                                $threshold=strtotime($expectedIn)+((int)$sch['tolerance_minutes']*60);
+                                $late=max(0,(int)floor((strtotime($first)-$threshold)/60));
+                                $early=max(0,(int)floor((strtotime($expectedOut)-strtotime($last))/60));
+                                if($late>0)$status='terlambat';elseif($early>0)$status='pulang_awal';
+                            }
                         }
                     }
                 }
