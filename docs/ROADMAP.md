@@ -39,8 +39,8 @@
 - [ ] Koreksi manual dengan audit trail
 
 ## Tahap 6 — Laporan dan payroll
-- [ ] Scanlog dan rincian harian
-- [ ] Rekap periode
+- [x] UI scanlog mentah dan rincian harian (data demo lokal)\n- [ ] Integrasi scanlog dengan mesin dan database
+- [x] Proses rekap manual per pegawai/hari (aturan demo sementara)\n- [ ] Rekap periode dengan jadwal dan kalender resmi
 - [ ] Terlambat, pulang cepat, tidak scan
 - [ ] Lembur dan istirahat
 - [ ] Komponen, formula, grup, proses gaji
