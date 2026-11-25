@@ -31,8 +31,8 @@
 - [ ] Status koneksi dan audit sinkronisasi
 
 ## Tahap 5 — Pengecualian dan kalkulasi
-- [ ] Izin, sakit, cuti
-- [ ] Tukar/ganti jadwal dan jam kerja
+- [x] UI dan CRUD lokal izin, sakit, cuti, perubahan jadwal/jam, lembur\n- [ ] Integrasi pengecualian dengan kalkulasi absensi
+- [x] Form tukar/ganti jadwal dan jam kerja (lokal)
 - [ ] Lembur dan kerja ekstra
 - [ ] Mesin perhitungan yang dapat diuji
 - [ ] Koreksi manual dengan audit trail
