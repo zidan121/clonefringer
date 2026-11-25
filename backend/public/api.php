@@ -15,6 +15,25 @@ if ($method === 'GET' && $path === '/health') {
     catch (Throwable $e) { error_log('[health] '.$e->getMessage()); jsonResponse(503,['ok'=>false,'database'=>'unavailable','message'=>'Database belum terhubung atau konfigurasi belum lengkap.']); }
 }
 
+
+if ($method === 'GET' && $path === '/dashboard/summary') {
+    requireUser();
+    try {
+        $pdo=database();
+        $summary=[
+            'active_employees'=>(int)$pdo->query("SELECT COUNT(*) FROM employees WHERE employee_status='active'")->fetchColumn(),
+            'total_employees'=>(int)$pdo->query('SELECT COUNT(*) FROM employees')->fetchColumn(),
+            'active_machines'=>(int)$pdo->query("SELECT COUNT(*) FROM machines WHERE status='active'")->fetchColumn(),
+            'total_machines'=>(int)$pdo->query('SELECT COUNT(*) FROM machines')->fetchColumn(),
+            'today_scans'=>(int)$pdo->query('SELECT COUNT(*) FROM raw_scanlogs WHERE DATE(scanned_at)=CURDATE()')->fetchColumn(),
+            'today_results'=>(int)$pdo->query('SELECT COUNT(*) FROM attendance_daily_results WHERE attendance_date=CURDATE()')->fetchColumn(),
+            'unmatched_pins'=>(int)$pdo->query('SELECT COUNT(DISTINCT r.pin) FROM raw_scanlogs r LEFT JOIN scanlog_pin_mappings p ON p.pin=r.pin WHERE r.employee_id IS NULL AND p.id IS NULL')->fetchColumn()
+        ];
+        $latest=$pdo->query('SELECT id,period_start,period_end,status,row_count,created_at FROM processing_batches ORDER BY id DESC LIMIT 1')->fetch()?:null;
+        jsonResponse(200,['ok'=>true,'data'=>$summary,'latest_batch'=>$latest,'server_date'=>date('Y-m-d')]);
+    } catch(Throwable $e) { error_log('[dashboard summary] '.$e->getMessage()); jsonResponse(500,['ok'=>false,'message'=>'Ringkasan dashboard gagal dimuat.']); }
+}
+
 if ($method === 'POST' && $path === '/auth/login') {
     startAppSession();
     $body = requestJson();
@@ -129,6 +148,12 @@ if (preg_match('#^/employees/(\d+)$#',$path,$m)) {
 }
 
 
+if ($path === '/units' && $method === 'GET') {
+    requireUser();
+    $rows=database()->query('SELECT id,code,name FROM units WHERE is_active=1 ORDER BY name')->fetchAll();
+    jsonResponse(200,['ok'=>true,'data'=>$rows]);
+}
+
 /* Work schedule master */
 if ($path === '/schedules' && $method === 'GET') {
     requireUser();
@@ -155,10 +180,42 @@ if ($path === '/schedules' && $method === 'POST') {
     }catch(PDOException $e){if($e->getCode()==='23000')jsonResponse(409,['ok'=>false,'message'=>'Kode jam kerja sudah digunakan.']);error_log('[schedule create] '.$e->getMessage());jsonResponse(500,['ok'=>false,'message'=>'Gagal membuat jam kerja.']);}
 }
 
+/* Schedule update and safe deactivation. */
+if (preg_match('#^/schedules/(\\d+)$#',$path,$m)) {
+    $id=(int)$m[1];
+    if ($method==='PUT') {
+        $user=requireRole(['admin','operator']); requireCsrf(); $b=requestJson();
+        $allowed=['code','name','start_time','end_time','break_start','break_end','tolerance_minutes','crosses_midnight','active_days','is_active'];
+        $changes=array_intersect_key($b,array_flip($allowed));
+        if(!$changes)jsonResponse(422,['ok'=>false,'message'=>'Tidak ada data jadwal yang diperbarui.']);
+        if(isset($changes['active_days'])){
+            $valid=['Senin','Selasa','Rabu','Kamis','Jumat','Sabtu','Minggu'];
+            if(!is_array($changes['active_days'])||!$changes['active_days']||array_diff($changes['active_days'],$valid))jsonResponse(422,['ok'=>false,'message'=>'Hari aktif tidak valid.']);
+            $changes['active_days']=json_encode(array_values(array_unique($changes['active_days'])),JSON_UNESCAPED_UNICODE);
+        }
+        if(isset($changes['tolerance_minutes'])&&(!is_numeric($changes['tolerance_minutes'])||(int)$changes['tolerance_minutes']<0||(int)$changes['tolerance_minutes']>600))jsonResponse(422,['ok'=>false,'message'=>'Toleransi harus 0–600 menit.']);
+        foreach(['start_time','end_time','break_start','break_end'] as $field)if(array_key_exists($field,$changes)&&$changes[$field]!==null&&$changes[$field]!==''&&!preg_match('/^([01]\\d|2[0-3]):[0-5]\\d(:[0-5]\\d)?$/',(string)$changes[$field]))jsonResponse(422,['ok'=>false,'message'=>'Format jam tidak valid.']);
+        try{
+            $pdo=database();$st=$pdo->prepare('SELECT * FROM work_schedules WHERE id=?');$st->execute([$id]);$before=$st->fetch();
+            if(!$before)jsonResponse(404,['ok'=>false,'message'=>'Jadwal tidak ditemukan.']);
+            $sets=[];$vals=[];
+            foreach($changes as $k=>$v){$sets[]=$k.'=?';$vals[]=$v===''?null:$v;}
+            $vals[]=$id;$pdo->prepare('UPDATE work_schedules SET '.implode(',',$sets).' WHERE id=?')->execute($vals);
+            audit($pdo,(int)$user['id'],'update','work_schedule',$id,$before,$b);jsonResponse(200,['ok'=>true,'message'=>'Jadwal diperbarui.']);
+        }catch(PDOException $e){if($e->getCode()==='23000')jsonResponse(409,['ok'=>false,'message'=>'Kode jadwal sudah digunakan.']);error_log('[schedule update] '.$e->getMessage());jsonResponse(500,['ok'=>false,'message'=>'Gagal memperbarui jadwal.']);}
+    }
+    if($method==='DELETE'){
+        $user=requireRole(['admin']);requireCsrf();
+        try{$pdo=database();$st=$pdo->prepare('SELECT * FROM work_schedules WHERE id=?');$st->execute([$id]);$before=$st->fetch();if(!$before)jsonResponse(404,['ok'=>false,'message'=>'Jadwal tidak ditemukan.']);
+            $pdo->prepare('UPDATE work_schedules SET is_active=0 WHERE id=?')->execute([$id]);audit($pdo,(int)$user['id'],'deactivate','work_schedule',$id,$before,['is_active'=>0]);jsonResponse(200,['ok'=>true,'message'=>'Jadwal dinonaktifkan; riwayat penugasan tetap dipertahankan.']);
+        }catch(Throwable $e){error_log('[schedule deactivate] '.$e->getMessage());jsonResponse(500,['ok'=>false,'message'=>'Gagal menonaktifkan jadwal.']);}
+    }
+}
+
 /* Calendar events */
 if ($path === '/calendar' && $method === 'GET') {
     requireUser();
-    $st=database()->query('SELECT c.id,c.name,c.event_type,c.unit_id,u.code AS unit_code,c.start_date,c.end_date,c.impact,c.notes FROM calendar_events c LEFT JOIN units u ON u.id=c.unit_id ORDER BY c.start_date DESC LIMIT 1000');
+    $st=database()->query('SELECT c.id,c.name,c.event_type,c.unit_id,u.code AS unit_code,u.name AS unit_name,c.start_date,c.end_date,c.impact,c.notes FROM calendar_events c LEFT JOIN units u ON u.id=c.unit_id ORDER BY c.start_date DESC LIMIT 1000');
     jsonResponse(200,['ok'=>true,'data'=>$st->fetchAll()]);
 }
 if ($path === '/calendar' && $method === 'POST') {
@@ -208,6 +265,54 @@ if ($path === '/machines' && $method === 'POST') {
     catch(PDOException $e){if($e->getCode()==='23000')jsonResponse(409,['ok'=>false,'message'=>'Nomor seri mesin sudah terdaftar.']);error_log('[machine create] '.$e->getMessage());jsonResponse(500,['ok'=>false,'message'=>'Gagal menyimpan mesin.']);}
 }
 
+if (preg_match('#^/machines/(\\d+)$#',$path,$machineMatch)) {
+    $machineId=(int)$machineMatch[1];
+    if ($method==='PUT') {
+        $user=requireRole(['admin','operator']);requireCsrf();$b=requestJson();
+        $allowed=['name','model','serial_number','host','port','connection_type','location','status','notes'];
+        $changes=array_intersect_key($b,array_flip($allowed));
+        if(!$changes)jsonResponse(422,['ok'=>false,'message'=>'Tidak ada perubahan mesin.']);
+        if(isset($changes['name'])&&trim((string)$changes['name'])==='')jsonResponse(422,['ok'=>false,'message'=>'Nama mesin wajib diisi.']);
+        if(isset($changes['host'])&&trim((string)$changes['host'])==='')jsonResponse(422,['ok'=>false,'message'=>'Host mesin wajib diisi.']);
+        if(isset($changes['port'])&&(!filter_var($changes['port'],FILTER_VALIDATE_INT)||$changes['port']<1||$changes['port']>65535))jsonResponse(422,['ok'=>false,'message'=>'Port mesin tidak valid.']);
+        if(isset($changes['connection_type'])&&!in_array($changes['connection_type'],['tcp','udp','http','sdk','file'],true))jsonResponse(422,['ok'=>false,'message'=>'Jenis koneksi tidak valid.']);
+        if(isset($changes['status'])&&!in_array($changes['status'],['active','inactive','maintenance','unknown'],true))jsonResponse(422,['ok'=>false,'message'=>'Status mesin tidak valid.']);
+        try{$pdo=database();$st=$pdo->prepare('SELECT * FROM machines WHERE id=?');$st->execute([$machineId]);$before=$st->fetch();if(!$before)jsonResponse(404,['ok'=>false,'message'=>'Mesin tidak ditemukan.']);$sets=[];$values=[];foreach($changes as $key=>$value){$sets[]=$key.'=?';$values[]=$value===''?null:$value;}$values[]=$machineId;$pdo->prepare('UPDATE machines SET '.implode(',',$sets).' WHERE id=?')->execute($values);audit($pdo,(int)$user['id'],'update','machine',$machineId,$before,$changes);jsonResponse(200,['ok'=>true,'message'=>'Konfigurasi mesin diperbarui.']);}
+        catch(PDOException $e){if($e->getCode()==='23000')jsonResponse(409,['ok'=>false,'message'=>'Nomor serial mesin sudah digunakan.']);error_log('[machine update] '.$e->getMessage());jsonResponse(500,['ok'=>false,'message'=>'Gagal memperbarui mesin.']);}
+    }
+    if($method==='DELETE'){
+        $user=requireRole(['admin']);requireCsrf();
+        try{$pdo=database();$st=$pdo->prepare('SELECT * FROM machines WHERE id=?');$st->execute([$machineId]);$before=$st->fetch();if(!$before)jsonResponse(404,['ok'=>false,'message'=>'Mesin tidak ditemukan.']);$pdo->prepare("UPDATE machines SET status='inactive' WHERE id=?")->execute([$machineId]);audit($pdo,(int)$user['id'],'deactivate','machine',$machineId,$before,['status'=>'inactive']);jsonResponse(200,['ok'=>true,'message'=>'Mesin dinonaktifkan; riwayat scanlog tetap dipertahankan.']);}
+        catch(Throwable $e){error_log('[machine deactivate] '.$e->getMessage());jsonResponse(500,['ok'=>false,'message'=>'Gagal menonaktifkan mesin.']);}
+    }
+}
+
+/* Calendar event update and delete. */
+if (preg_match('#^/calendar/(\\d+)$#',$path,$m)) {
+    $id=(int)$m[1];
+    if($method==='PUT'){
+        $user=requireRole(['admin','operator']);requireCsrf();$b=requestJson();
+        $allowed=['name','event_type','unit_id','start_date','end_date','impact','notes'];$changes=array_intersect_key($b,array_flip($allowed));
+        if(!$changes)jsonResponse(422,['ok'=>false,'message'=>'Tidak ada data kalender yang diperbarui.']);
+        $types=['national_holiday','foundation_holiday','unit_holiday','special_activity'];
+        if(isset($changes['event_type'])&&!in_array($changes['event_type'],$types,true))jsonResponse(422,['ok'=>false,'message'=>'Jenis kalender tidak valid.']);
+        if(isset($changes['impact'])&&!in_array($changes['impact'],['non_working','working'],true))jsonResponse(422,['ok'=>false,'message'=>'Dampak kalender tidak valid.']);
+        foreach(['start_date','end_date'] as $field)if(isset($changes[$field])&&!preg_match('/^\\d{4}-\\d{2}-\\d{2}$/',(string)$changes[$field]))jsonResponse(422,['ok'=>false,'message'=>'Tanggal kalender tidak valid.']);
+        try{$pdo=database();$st=$pdo->prepare('SELECT * FROM calendar_events WHERE id=?');$st->execute([$id]);$before=$st->fetch();if(!$before)jsonResponse(404,['ok'=>false,'message'=>'Kegiatan kalender tidak ditemukan.']);
+            $start=$changes['start_date']??$before['start_date'];$end=$changes['end_date']??$before['end_date'];if($end<$start)jsonResponse(422,['ok'=>false,'message'=>'Tanggal selesai tidak boleh sebelum tanggal mulai.']);
+            if(array_key_exists('unit_id',$changes)&&$changes['unit_id']==='')$changes['unit_id']=null;
+            $sets=[];$vals=[];foreach($changes as $k=>$v){$sets[]=$k.'=?';$vals[]=$v;}$vals[]=$id;$pdo->prepare('UPDATE calendar_events SET '.implode(',',$sets).' WHERE id=?')->execute($vals);
+            audit($pdo,(int)$user['id'],'update','calendar_event',$id,$before,$b);jsonResponse(200,['ok'=>true,'message'=>'Kegiatan kalender diperbarui.']);
+        }catch(Throwable $e){error_log('[calendar update] '.$e->getMessage());jsonResponse(500,['ok'=>false,'message'=>'Gagal memperbarui kalender.']);}
+    }
+    if($method==='DELETE'){
+        $user=requireRole(['admin']);requireCsrf();
+        try{$pdo=database();$st=$pdo->prepare('SELECT * FROM calendar_events WHERE id=?');$st->execute([$id]);$before=$st->fetch();if(!$before)jsonResponse(404,['ok'=>false,'message'=>'Kegiatan kalender tidak ditemukan.']);
+            $pdo->prepare('DELETE FROM calendar_events WHERE id=?')->execute([$id]);audit($pdo,(int)$user['id'],'delete','calendar_event',$id,$before,null);jsonResponse(200,['ok'=>true,'message'=>'Kegiatan kalender dihapus.']);
+        }catch(Throwable $e){error_log('[calendar delete] '.$e->getMessage());jsonResponse(500,['ok'=>false,'message'=>'Gagal menghapus kalender.']);}
+    }
+}
+
 /* Per-employee schedule assignments with optional individual overrides. */
 if ($path === '/schedule-assignments' && $method === 'GET') {
     requireUser();
@@ -219,8 +324,18 @@ if ($path === '/schedule-assignments' && $method === 'POST') {
     $employee=filter_var($b['employee_id']??null,FILTER_VALIDATE_INT);$schedule=filter_var($b['schedule_id']??null,FILTER_VALIDATE_INT);$from=$b['effective_from']??'';
     $to=$b['effective_to']??null;
     if(!$employee||!$schedule||!preg_match('/^\\d{4}-\\d{2}-\\d{2}$/',(string)$from)||($to!==null&&$to!==''&&(!preg_match('/^\\d{4}-\\d{2}-\\d{2}$/',(string)$to)||$to<$from)))jsonResponse(422,['ok'=>false,'message'=>'Penugasan jadwal tidak valid.']);
-    try{$pdo=database();$st=$pdo->prepare('INSERT INTO employee_schedule_assignments (employee_id,schedule_id,effective_from,effective_to,custom_start,custom_end,custom_tolerance) VALUES (?,?,?,?,?,?,?)');$st->execute([$employee,$schedule,$from,$to?:null,$b['custom_start']??null,$b['custom_end']??null,($b['custom_tolerance']??'')===''?null:($b['custom_tolerance']??null)]);$id=(int)$pdo->lastInsertId();audit($pdo,(int)$user['id'],'create','schedule_assignment',$id,null,$b);jsonResponse(201,['ok'=>true,'id'=>$id,'message'=>'Jadwal pegawai berhasil ditetapkan.']);}
-    catch(PDOException $e){if($e->getCode()==='23000')jsonResponse(422,['ok'=>false,'message'=>'Pegawai atau master jadwal tidak ditemukan.']);error_log('[assignment create] '.$e->getMessage());jsonResponse(500,['ok'=>false,'message'=>'Gagal menetapkan jadwal.']);}
+    try{
+        $pdo=database();$pdo->beginTransaction();
+        $same=$pdo->prepare('SELECT * FROM employee_schedule_assignments WHERE employee_id=? AND effective_from=? LIMIT 1 FOR UPDATE');$same->execute([$employee,$from]);$existing=$same->fetch();
+        $future=$pdo->prepare('SELECT MIN(effective_from) FROM employee_schedule_assignments WHERE employee_id=? AND effective_from>?');$future->execute([$employee,$from]);$nextDate=$future->fetchColumn();
+        $effectiveTo=$to?:null;if($nextDate){$dayBefore=date('Y-m-d',strtotime($nextDate.' -1 day'));if($effectiveTo===null||$effectiveTo>$dayBefore)$effectiveTo=$dayBefore;}
+        $prior=$pdo->prepare('SELECT * FROM employee_schedule_assignments WHERE employee_id=? AND effective_from<? AND (effective_to IS NULL OR effective_to>=?) FOR UPDATE');$prior->execute([$employee,$from,$from]);$closed=$prior->fetchAll();
+        foreach($closed as $row)$pdo->prepare('UPDATE employee_schedule_assignments SET effective_to=? WHERE id=?')->execute([date('Y-m-d',strtotime($from.' -1 day')),$row['id']]);
+        $values=[$schedule,$effectiveTo,$b['custom_start']??null,$b['custom_end']??null,($b['custom_tolerance']??'')===''?null:($b['custom_tolerance']??null)];
+        if($existing){$id=(int)$existing['id'];$before=$existing;$pdo->prepare('UPDATE employee_schedule_assignments SET schedule_id=?,effective_to=?,custom_start=?,custom_end=?,custom_tolerance=? WHERE id=?')->execute([...$values,$id]);audit($pdo,(int)$user['id'],'update','schedule_assignment',$id,$before,['schedule_id'=>$schedule,'effective_from'=>$from,'effective_to'=>$effectiveTo,'custom_start'=>$values[2],'custom_end'=>$values[3],'custom_tolerance'=>$values[4]]);}
+        else{$st=$pdo->prepare('INSERT INTO employee_schedule_assignments (employee_id,schedule_id,effective_from,effective_to,custom_start,custom_end,custom_tolerance) VALUES (?,?,?,?,?,?,?)');$st->execute([$employee,$schedule,$from,$effectiveTo,...array_slice($values,2)]);$id=(int)$pdo->lastInsertId();audit($pdo,(int)$user['id'],'create','schedule_assignment',$id,null,['employee_id'=>$employee,'schedule_id'=>$schedule,'effective_from'=>$from,'effective_to'=>$effectiveTo,'custom_start'=>$values[2],'custom_end'=>$values[3],'custom_tolerance'=>$values[4]]);}
+        $pdo->commit();jsonResponse(201,['ok'=>true,'id'=>$id,'message'=>'Penugasan jadwal tersimpan; riwayat sebelumnya tetap terjaga.']);
+    }catch(Throwable $e){if(isset($pdo)&&$pdo->inTransaction())$pdo->rollBack();if($e instanceof PDOException&&$e->getCode()==='23000')jsonResponse(422,['ok'=>false,'message'=>'Pegawai atau master jadwal tidak ditemukan.']);error_log('[assignment create] '.$e->getMessage());jsonResponse(500,['ok'=>false,'message'=>'Gagal menetapkan jadwal.']);}
 }
 if ($path === '/unit-schedule-defaults' && $method === 'GET') {
     requireUser();
@@ -232,8 +347,26 @@ if ($path === '/unit-schedule-defaults' && $method === 'POST') {
     $unit=filter_var($b['unit_id']??null,FILTER_VALIDATE_INT);$schedule=filter_var($b['schedule_id']??null,FILTER_VALIDATE_INT);$from=$b['effective_from']??'';
     $to=$b['effective_to']??null;
     if(!$unit||!$schedule||!preg_match('/^\\d{4}-\\d{2}-\\d{2}$/',(string)$from)||($to!==null&&$to!==''&&(!preg_match('/^\\d{4}-\\d{2}-\\d{2}$/',(string)$to)||$to<$from)))jsonResponse(422,['ok'=>false,'message'=>'Default jadwal unit tidak valid.']);
-    try{$pdo=database();$st=$pdo->prepare('INSERT INTO unit_schedule_defaults (unit_id,schedule_id,effective_from,effective_to) VALUES (?,?,?,?)');$st->execute([$unit,$schedule,$from,$to?:null]);$id=(int)$pdo->lastInsertId();audit($pdo,(int)$user['id'],'create','unit_schedule_default',$id,null,$b);jsonResponse(201,['ok'=>true,'id'=>$id,'message'=>'Default jadwal unit tersimpan.']);}
-    catch(PDOException $e){if($e->getCode()==='23000')jsonResponse(422,['ok'=>false,'message'=>'Unit atau master jadwal tidak ditemukan.']);error_log('[unit default create] '.$e->getMessage());jsonResponse(500,['ok'=>false,'message'=>'Gagal menyimpan default jadwal.']);}
+    try{
+        $pdo=database();$pdo->beginTransaction();
+        $same=$pdo->prepare('SELECT * FROM unit_schedule_defaults WHERE unit_id=? AND effective_from=? LIMIT 1 FOR UPDATE');
+        $same->execute([$unit,$from]);$existing=$same->fetch();
+        $future=$pdo->prepare('SELECT MIN(effective_from) FROM unit_schedule_defaults WHERE unit_id=? AND effective_from>?');
+        $future->execute([$unit,$from]);$nextDate=$future->fetchColumn();
+        $effectiveTo=$to?:null;
+        if($nextDate){$dayBefore=date('Y-m-d',strtotime($nextDate.' -1 day'));if($effectiveTo===null||$effectiveTo>$dayBefore)$effectiveTo=$dayBefore;}
+        $prior=$pdo->prepare('SELECT * FROM unit_schedule_defaults WHERE unit_id=? AND effective_from<? AND (effective_to IS NULL OR effective_to>=?) FOR UPDATE');
+        $prior->execute([$unit,$from,$from]);$closed=$prior->fetchAll();
+        foreach($closed as $row){$pdo->prepare('UPDATE unit_schedule_defaults SET effective_to=? WHERE id=?')->execute([date('Y-m-d',strtotime($from.' -1 day')),$row['id']]);}
+        if($existing){
+            $id=(int)$existing['id'];$pdo->prepare('UPDATE unit_schedule_defaults SET schedule_id=?,effective_to=? WHERE id=?')->execute([$schedule,$effectiveTo,$id]);
+            audit($pdo,(int)$user['id'],'update','unit_schedule_default',$id,$existing,['schedule_id'=>$schedule,'effective_from'=>$from,'effective_to'=>$effectiveTo]);
+        }else{
+            $st=$pdo->prepare('INSERT INTO unit_schedule_defaults (unit_id,schedule_id,effective_from,effective_to) VALUES (?,?,?,?)');$st->execute([$unit,$schedule,$from,$effectiveTo]);$id=(int)$pdo->lastInsertId();
+            audit($pdo,(int)$user['id'],'create','unit_schedule_default',$id,null,['unit_id'=>$unit,'schedule_id'=>$schedule,'effective_from'=>$from,'effective_to'=>$effectiveTo]);
+        }
+        $pdo->commit();jsonResponse(201,['ok'=>true,'id'=>$id,'message'=>'Default jadwal unit tersimpan tanpa menimpa riwayat sebelumnya.']);
+    }catch(Throwable $e){if(isset($pdo)&&$pdo->inTransaction())$pdo->rollBack();if($e instanceof PDOException&&$e->getCode()==='23000')jsonResponse(422,['ok'=>false,'message'=>'Unit atau master jadwal tidak ditemukan.']);error_log('[unit default create] '.$e->getMessage());jsonResponse(500,['ok'=>false,'message'=>'Gagal menyimpan default jadwal.']);}
 }
 
 
@@ -262,8 +395,9 @@ if ($path === '/scanlogs/map-pin' && $method === 'POST') {
 }
 if ($path === '/scanlogs/import' && $method === 'POST') {
     $user=requireRole(['admin','operator']); requireCsrf(); $b=requestJson();
-    $rows=$b['rows']??null; $machine=($b['machine_id']??'')===''?null:filter_var($b['machine_id'],FILTER_VALIDATE_INT);
-    if (!is_array($rows) || count($rows)<1 || count($rows)>1000 || ($machine===false)) jsonResponse(422,['ok'=>false,'message'=>'Impor harus berisi 1–1000 baris dan mesin yang valid.']);
+    $rows=$b['rows']??null; $machine=filter_var($b['machine_id']??null,FILTER_VALIDATE_INT);
+    if (!is_array($rows) || count($rows)<1 || count($rows)>1000 || !$machine) jsonResponse(422,['ok'=>false,'message'=>'Pilih mesin sumber dan impor 1–1000 baris.']);
+    $machineCheck=database()->prepare('SELECT id FROM machines WHERE id=? AND status<>\'inactive\'');$machineCheck->execute([$machine]);if(!$machineCheck->fetchColumn())jsonResponse(422,['ok'=>false,'message'=>'Mesin sumber tidak ditemukan atau nonaktif.']);
     $pdo=database(); $inserted=0; $duplicates=0; $unmatched=0;
     try {
         $pdo->beginTransaction();
@@ -300,12 +434,12 @@ if ($path === '/attendance/process' && $method === 'POST') {
         $groups=[];
         foreach($scan->fetchAll() as $r){$day=substr($r['scanned_at'],0,10);$key=$r['employee_id'].'|'.$day;$groups[$key][]=$r;}
         // Seed scheduled employee-days even when there is no fingerprint scan, so absences are visible.
-        $activeEmployees=$pdo->query("SELECT id FROM employees WHERE employee_status='active'")->fetchAll(PDO::FETCH_COLUMN);
+        $activeEmployees=$pdo->query("SELECT id,join_date,contract_end FROM employees WHERE employee_status='active'")->fetchAll();
         for($cursor=strtotime($from);$cursor<=strtotime($to);$cursor=strtotime('+1 day',$cursor)){
             $day=date('Y-m-d',$cursor);
-            foreach($activeEmployees as $activeId){$key=$activeId.'|'.$day;if(!isset($groups[$key]))$groups[$key]=[];}
+            foreach($activeEmployees as $activeEmployee){$join=$activeEmployee['join_date'];$end=$activeEmployee['contract_end'];if(($join&&$day<$join)||($end&&$day>$end))continue;$key=$activeEmployee['id'].'|'.$day;if(!isset($groups[$key]))$groups[$key]=[];}
         }
-        $employeeStmt=$pdo->prepare('SELECT id,unit_id FROM employees WHERE id=?');
+        $employeeStmt=$pdo->prepare('SELECT id,unit_id,employee_status,join_date,contract_end FROM employees WHERE id=?');
         $assignment=$pdo->prepare('SELECT a.schedule_id,COALESCE(a.custom_start,s.start_time) AS start_time,COALESCE(a.custom_end,s.end_time) AS end_time,COALESCE(a.custom_tolerance,s.tolerance_minutes) AS tolerance_minutes,s.active_days,s.crosses_midnight FROM employee_schedule_assignments a JOIN work_schedules s ON s.id=a.schedule_id WHERE a.employee_id=? AND a.effective_from<=? AND (a.effective_to IS NULL OR a.effective_to>=?) ORDER BY a.effective_from DESC,a.id DESC LIMIT 1');
         $unitDefault=$pdo->prepare('SELECT d.schedule_id,s.start_time,s.end_time,s.tolerance_minutes,s.active_days,s.crosses_midnight FROM unit_schedule_defaults d JOIN work_schedules s ON s.id=d.schedule_id WHERE d.unit_id=? AND d.effective_from<=? AND (d.effective_to IS NULL OR d.effective_to>=?) ORDER BY d.effective_from DESC,d.id DESC LIMIT 1');
         $holiday=$pdo->prepare("SELECT COUNT(*) FROM calendar_events WHERE impact='non_working' AND start_date<=? AND end_date>=? AND (unit_id IS NULL OR unit_id=?)");
@@ -314,11 +448,16 @@ if ($path === '/attendance/process' && $method === 'POST') {
         $count=0;
         foreach($groups as $key=>$logs){
             [$employeeId,$day]=explode('|',$key,2);$employeeStmt->execute([$employeeId]);$emp=$employeeStmt->fetch();if(!$emp)continue;
-            $assignment->execute([$employeeId,$day,$day]);$sch=$assignment->fetch();
-            if(!$sch && $emp['unit_id']){$unitDefault->execute([$emp['unit_id'],$day,$day]);$sch=$unitDefault->fetch();}
             $first=$logs[0]['scanned_at']??null;$last=$logs? $logs[count($logs)-1]['scanned_at']:null;$ids=array_map(static fn($x)=>(int)$x['id'],$logs);
             $status='hadir';$late=0;$early=0;$scheduleId=null;$detail=['rule'=>'first_scan_arrival_last_scan_departure','intermediate_scans_retained'=>true];
-            if(!$sch){$status='jadwal_belum_diatur';}
+            if(($emp['join_date']&&$day<$emp['join_date'])||($emp['contract_end']&&$day>$emp['contract_end'])||$emp['employee_status']!=='active'){
+                if(count($logs)===0)continue;
+                $status='perlu_review_status_pegawai';
+                $detail['review_reason']='Tanggal berada di luar masa aktif pegawai atau status pegawai bukan aktif.';
+            }else{
+                $assignment->execute([$employeeId,$day,$day]);$sch=$assignment->fetch();
+                if(!$sch && $emp['unit_id']){$unitDefault->execute([$emp['unit_id'],$day,$day]);$sch=$unitDefault->fetch();}
+                if(!$sch){$status='jadwal_belum_diatur';}
             else {
                 $scheduleId=(int)$sch['schedule_id'];$days=json_decode((string)$sch['active_days'],true)?:[];
                 $weekday=['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'][(int)date('w',strtotime($day))];
@@ -332,13 +471,20 @@ if ($path === '/attendance/process' && $method === 'POST') {
                         elseif(count($logs)===0){$status='tidak_hadir';}
                         else {
                             $expectedIn=$day.' '.$sch['start_time'];$expectedOut=$day.' '.$sch['end_time'];
-                            $threshold=strtotime($expectedIn)+((int)$sch['tolerance_minutes']*60);
-                            $late=max(0,(int)floor((strtotime($first)-$threshold)/60));
-                            $early=max(0,(int)floor((strtotime($expectedOut)-strtotime($last))/60));
-                            if($late>0)$status='terlambat';elseif($early>0)$status='pulang_awal';
+                            if(count($logs)===1){
+                                // A single scan cannot establish both arrival and departure; keep it for review.
+                                $status='perlu_review_scan_tunggal';
+                                $detail['review_reason']='Hanya ada satu scan; waktu pulang belum dapat dipastikan.';
+                            }else{
+                                $threshold=strtotime($expectedIn)+((int)$sch['tolerance_minutes']*60);
+                                $late=max(0,(int)floor((strtotime($first)-$threshold)/60));
+                                $early=max(0,(int)floor((strtotime($expectedOut)-strtotime($last))/60));
+                                if($late>0)$status='terlambat';elseif($early>0)$status='pulang_awal';
+                            }
                         }
                     }
                 }
+            }
             }
             $detail['scan_ids']=$ids;$detail['scan_count']=count($logs);
             $save->execute([$batch,$employeeId,$day,$scheduleId,$first,$last,count($logs),$status,$late,$early,json_encode($ids),json_encode($detail,JSON_UNESCAPED_UNICODE)]);
@@ -357,10 +503,81 @@ if ($path === '/attendance/results' && $method === 'GET') {
     $st=database()->prepare('SELECT r.id,r.employee_id,e.pin,e.full_name,r.attendance_date,r.schedule_id,s.name AS schedule_name,r.first_scan_at,r.last_scan_at,r.scan_count,r.attendance_status,r.late_minutes,r.early_leave_minutes,r.source_scan_ids,r.calculation_detail FROM attendance_daily_results r JOIN employees e ON e.id=r.employee_id LEFT JOIN work_schedules s ON s.id=r.schedule_id WHERE r.batch_id=? ORDER BY r.attendance_date,e.full_name');
     $st->execute([$batch]);jsonResponse(200,['ok'=>true,'data'=>$st->fetchAll()]);
 }
+if (preg_match('#^/attendance/results/(\\d+)/scanlogs$#',$path,$detailMatch) && $method === 'GET') {
+    requireUser();
+    $resultId=(int)$detailMatch[1];
+    $resultStmt=database()->prepare('SELECT source_scan_ids FROM attendance_daily_results WHERE id=?');
+    $resultStmt->execute([$resultId]);
+    $sourceIdsJson=$resultStmt->fetchColumn();
+    if($sourceIdsJson===false)jsonResponse(404,['ok'=>false,'message'=>'Hasil kehadiran tidak ditemukan.']);
+    $sourceIds=json_decode((string)$sourceIdsJson,true);
+    if(!is_array($sourceIds)||!$sourceIds)jsonResponse(200,['ok'=>true,'data'=>[]]);
+    $ids=array_values(array_unique(array_filter(array_map('intval',$sourceIds),static fn($id)=>$id>0)));
+    if(!$ids)jsonResponse(200,['ok'=>true,'data'=>[]]);
+    $marks=implode(',',array_fill(0,count($ids),'?'));
+    $sql='SELECT r.id,r.pin,r.scanned_at,m.name AS machine_name,r.verify_method,r.device_event_code FROM raw_scanlogs r LEFT JOIN machines m ON m.id=r.machine_id WHERE r.id IN ('.$marks.') ORDER BY r.scanned_at,r.id';
+    $st=database()->prepare($sql);$st->execute($ids);
+    jsonResponse(200,['ok'=>true,'data'=>$st->fetchAll()]);
+}
 if ($path === '/attendance/batches' && $method === 'GET') {
     requireUser();
     $rows=database()->query('SELECT id,period_start,period_end,status,ruleset_version,started_at,finished_at,row_count,created_at FROM processing_batches ORDER BY id DESC LIMIT 100')->fetchAll();
     jsonResponse(200,['ok'=>true,'data'=>$rows]);
 }
+
+
+/* User administration: only administrators may manage application accounts. */
+if ($path === '/users' && $method === 'GET') {
+    requireRole(['admin']);
+    try {
+        $rows=database()->query('SELECT id,username,display_name,role,is_active,last_login_at,created_at FROM app_users ORDER BY display_name,username')->fetchAll();
+        jsonResponse(200,['ok'=>true,'data'=>$rows]);
+    } catch(Throwable $e) { error_log('[users list] '.$e->getMessage()); jsonResponse(500,['ok'=>false,'message'=>'Gagal mengambil daftar pengguna.']); }
+}
+if ($path === '/users' && $method === 'POST') {
+    $user=requireRole(['admin']); requireCsrf(); $b=requestJson();
+    $username=trim((string)($b['username']??'')); $display=trim((string)($b['display_name']??''));
+    $password=(string)($b['password']??''); $role=(string)($b['role']??'viewer');
+    if(!preg_match('/^[A-Za-z0-9._-]{3,80}$/',$username))jsonResponse(422,['ok'=>false,'message'=>'Username 3–80 karakter; gunakan huruf, angka, titik, garis bawah, atau tanda hubung.']);
+    if($display===''||strlen($display)>150)jsonResponse(422,['ok'=>false,'message'=>'Nama tampilan wajib diisi (maksimal 150 karakter).']);
+    if(strlen($password)<10)jsonResponse(422,['ok'=>false,'message'=>'Password minimal 10 karakter.']);
+    if(!in_array($role,['admin','operator','viewer'],true))jsonResponse(422,['ok'=>false,'message'=>'Peran pengguna tidak valid.']);
+    try {
+        $pdo=database(); $hash=password_hash($password,PASSWORD_DEFAULT);
+        $st=$pdo->prepare('INSERT INTO app_users (username,password_hash,display_name,role,is_active) VALUES (?,?,?,?,1)');
+        $st->execute([$username,$hash,$display,$role]); $id=(int)$pdo->lastInsertId();
+        audit($pdo,(int)$user['id'],'create','app_user',$id,null,['username'=>$username,'display_name'=>$display,'role'=>$role,'is_active'=>1]);
+        jsonResponse(201,['ok'=>true,'id'=>$id,'message'=>'Pengguna berhasil dibuat.']);
+    } catch(PDOException $e) { if((string)$e->getCode()==='23000')jsonResponse(409,['ok'=>false,'message'=>'Username sudah digunakan.']); error_log('[users create] '.$e->getMessage()); jsonResponse(500,['ok'=>false,'message'=>'Gagal membuat pengguna.']); }
+}
+if (preg_match('#^/users/(\d+)$#',$path,$userMatch) && $method === 'PUT') {
+    $user=requireRole(['admin']); requireCsrf(); $id=(int)$userMatch[1]; $b=requestJson();
+    if($id<1)jsonResponse(422,['ok'=>false,'message'=>'ID pengguna tidak valid.']);
+    try {
+        $pdo=database(); $st=$pdo->prepare('SELECT id,username,display_name,role,is_active FROM app_users WHERE id=?'); $st->execute([$id]); $before=$st->fetch();
+        if(!$before)jsonResponse(404,['ok'=>false,'message'=>'Pengguna tidak ditemukan.']);
+        $display=trim((string)($b['display_name']??$before['display_name']));
+        $role=(string)($b['role']??$before['role']); $active=array_key_exists('is_active',$b)?(int)(bool)$b['is_active']:(int)$before['is_active'];
+        $password=(string)($b['password']??'');
+        if($display===''||strlen($display)>150)jsonResponse(422,['ok'=>false,'message'=>'Nama tampilan wajib diisi (maksimal 150 karakter).']);
+        if(!in_array($role,['admin','operator','viewer'],true))jsonResponse(422,['ok'=>false,'message'=>'Peran pengguna tidak valid.']);
+        if($password!==''&&strlen($password)<10)jsonResponse(422,['ok'=>false,'message'=>'Password baru minimal 10 karakter.']);
+        if($id===(int)$user['id']&&($active!==1||$role!=='admin'))jsonResponse(409,['ok'=>false,'message'=>'Akun yang sedang digunakan tidak boleh dinonaktifkan atau diturunkan perannya.']);
+        if($before['role']==='admin'&&((string)$before['role']!==$role||$active===0)){
+            $count=(int)$pdo->query("SELECT COUNT(*) FROM app_users WHERE role='admin' AND is_active=1")->fetchColumn();
+            if($count<=1)jsonResponse(409,['ok'=>false,'message'=>'Tidak dapat menonaktifkan atau mengubah peran admin aktif terakhir.']);
+        }
+        $pdo->beginTransaction();
+        if($password!==''){
+            $pdo->prepare('UPDATE app_users SET display_name=?,role=?,is_active=?,password_hash=? WHERE id=?')->execute([$display,$role,$active,password_hash($password,PASSWORD_DEFAULT),$id]);
+        } else {
+            $pdo->prepare('UPDATE app_users SET display_name=?,role=?,is_active=? WHERE id=?')->execute([$display,$role,$active,$id]);
+        }
+        $after=['username'=>$before['username'],'display_name'=>$display,'role'=>$role,'is_active'=>$active,'password_changed'=>$password!==''];
+        audit($pdo,(int)$user['id'],'update','app_user',$id,$before,$after); $pdo->commit();
+        jsonResponse(200,['ok'=>true,'message'=>'Pengaturan pengguna diperbarui.']);
+    } catch(Throwable $e) { if(isset($pdo)&&$pdo->inTransaction())$pdo->rollBack(); error_log('[users update] '.$e->getMessage()); jsonResponse(500,['ok'=>false,'message'=>'Gagal memperbarui pengguna.']); }
+}
+
 
 jsonResponse(404,['ok'=>false,'message'=>'Endpoint tidak ditemukan.']);
