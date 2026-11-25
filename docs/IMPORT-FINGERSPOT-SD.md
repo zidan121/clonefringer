@@ -49,6 +49,7 @@ Seluruh penulisan dilakukan dalam satu transaksi database. Jika terjadi kegagala
 - Pegawai: PIN, nama, unit SDIT, status, tanggal mulai kerja, telepon, jenis kelamin, tanggal lahir, dan tempat lahir sebagai catatan.
 - Mesin: nomor seri, nama, model indikatif, IP/port dan status unknown. Activation code dan communication key sengaja tidak dibaca.
 - Scanlog: `att_log` dengan tanggal valid mulai 2001, PIN asli, waktu scan, kode verifikasi dan payload sumber. ID transaksi dibuat deterministik dari serial mesin + waktu + PIN, sehingga proses ulang tidak menggandakan transaksi.
+- Sebelum impor, setiap nomor seri mesin pada scanlog harus ditemukan di tabel `device`. Serial yang tidak cocok muncul pada laporan dry-run dan akan membatalkan mode `--apply` agar tidak ada scanlog tanpa identitas mesin.
 
 ## Batasan penting
 - Baris scan dengan tanggal placeholder `2000-01-01` atau zero-date tidak diimpor sebagai kehadiran. Jumlahnya ditampilkan dalam laporan.
