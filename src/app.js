@@ -19,6 +19,15 @@ function activate(page){
  if(page==="kalender"){content.innerHTML=calendarPage();initCalendarPage();return;}
  const item=pages[page]||pages.dashboard;content.innerHTML=`<section class="placeholder-page"><header class="page-heading"><h1>${item.title}</h1><p>${item.description||"Modul sedang disiapkan."}</p></header><div class="empty-state"><strong>Modul ${item.title} belum tersedia.</strong><p>Bagian ini akan diaktifkan setelah API dan alur datanya selesai.</p></div></section>`;
 }
+async function loadDashboardSummary(){
+ const target=document.querySelector('#dashboard-summary');if(!target)return;
+ target.innerHTML='<div class="summary-loading">Memuat ringkasan operasional...</div>';
+ try{
+  const result=await CfApi.request('/dashboard/summary');const d=result.data||{};
+  const cards=[['Pegawai aktif',d.active_employees,(d.total_employees||0)+' total'],['Mesin aktif',d.active_machines,(d.total_machines||0)+' total'],['Scan hari ini',d.today_scans,'Transaksi fingerprint'],['Hasil rekap hari ini',d.today_results,'Baris kehadiran'],['PIN belum cocok',d.unmatched_pins,'Perlu pemetaan pegawai']];
+  target.innerHTML=cards.map(c=>'<article class="summary-card"><small>'+c[0]+'</small><strong>'+Number(c[1]||0)+'</strong><span>'+c[2]+'</span></article>').join('');
+ }catch(error){target.innerHTML='<div class="summary-error">Ringkasan belum tersedia: '+String(error.message).replace(/[&<>]/g,'')+'</div>';}
+}
 function afterLogin(){
  navButtons.forEach(b=>b.addEventListener("click",()=>activate(b.dataset.page)));
  document.querySelectorAll(".rail-tab").forEach(b=>b.addEventListener("click",()=>document.querySelectorAll(".rail-tab").forEach(t=>t.classList.toggle("selected",t===b))));
@@ -26,7 +35,7 @@ function afterLogin(){
  const db=document.querySelector(".statusbar span:nth-child(3)");if(db)db.innerHTML='DB: <b>API aktif</b>';
  const state=document.querySelector(".statusbar .status-spacer");if(state&&state.nextElementSibling)state.nextElementSibling.innerHTML='Status: <b>Sesi aktif</b>';
  document.querySelector("#logout-button")?.addEventListener("click",async()=>{if(!confirm("Keluar dari CLONEFRINGER?"))return;try{await CfApi.logout();location.reload();}catch(e){alert(e.message);}});
- activate("dashboard");
+ activate("dashboard");loadDashboardSummary();
 }
 (async()=>{
  try{await CfApi.me();afterLogin();}
