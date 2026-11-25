@@ -23,7 +23,8 @@
 - [ ] Jadwal individual dan default unit
 
 ## Tahap 4 — Mesin dan transaksi
-- [ ] Inventaris perangkat
+- [x] Inventaris perangkat, tambah/ubah/hapus, parameter koneksi, ekspor CSV
+- [ ] Uji komunikasi perangkat melalui backend/adapter nyata
 - [ ] Adapter komunikasi per model
 - [ ] Download scanlog
 - [ ] Upload/unduh user jika protokol mendukung
