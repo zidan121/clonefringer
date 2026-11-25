@@ -56,3 +56,17 @@ Buka `http://127.0.0.1:8081/api/health`. Router development akan meneruskan selu
 ## Status
 
 Ini baru skema dan endpoint pemeriksaan kesehatan koneksi. Belum tersedia login, CRUD API, sinkronisasi perangkat, mesin kalkulasi server, maupun migrasi otomatis. Jangan gunakan untuk absensi produksi sebelum seluruh fungsi tersebut selesai diuji.
+
+## Endpoint tambahan yang tersedia
+
+Semua endpoint di bawah memerlukan sesi login untuk membaca data. Semua operasi tulis memerlukan role admin/operator (kecuali keputusan pengecualian yang khusus admin) dan header `X-CSRF-Token`.
+
+- `GET /api/schedules`, `POST /api/schedules`
+- `GET /api/calendar`, `POST /api/calendar`
+- `GET /api/exceptions`, `POST /api/exceptions`
+- `POST /api/exceptions/{id}/decision` — admin menyetujui/menolak pengajuan pending.
+- `GET /api/machines`, `POST /api/machines` — inventaris saja, belum menguji koneksi perangkat.
+- `GET /api/schedule-assignments`, `POST /api/schedule-assignments`
+- `GET /api/unit-schedule-defaults`, `POST /api/unit-schedule-defaults`
+
+Endpoint create untuk master belum menyediakan update/delete. Endpoint import scanlog dan kalkulasi absensi server juga belum tersedia.
