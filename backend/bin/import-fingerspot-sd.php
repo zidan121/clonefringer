@@ -33,7 +33,7 @@ function tableExists(PDO $pdo, string $table): bool {
 }
 function cleanDate(mixed $value): ?string {
     $v = trim((string)$value);
-    return ($v === '' || str_starts_with($v, '0000-00-00') || $v === '2000-01-01') ? null : $v;
+    return ($v === '' || str_starts_with($v, '0000-00-00')) ? null : $v;
 }
 function genderValue(mixed $value): ?string {
     return match ((int)$value) { 1 => 'male', 2 => 'female', default => null };
@@ -61,6 +61,8 @@ try {
     }
     $placeholderScans = (int)$legacy->query("SELECT COUNT(*) FROM att_log WHERE DATE(scan_date)='2000-01-01' OR scan_date='0000-00-00 00:00:00'")->fetchColumn();
     $validScans = (int)$legacy->query("SELECT COUNT(*) FROM att_log WHERE scan_date >= '2001-01-01 00:00:00'")->fetchColumn();
+    $unmatchedPins = $legacy->query("SELECT a.pin,COUNT(*) AS scan_count,MIN(a.scan_date) AS first_seen,MAX(a.scan_date) AS last_seen FROM att_log a LEFT JOIN pegawai p ON p.pegawai_pin=a.pin WHERE a.scan_date >= '2001-01-01 00:00:00' AND p.pegawai_id IS NULL GROUP BY a.pin ORDER BY a.pin")->fetchAll();
+    $schedulePatternRows = $legacy->query("SELECT m.jdw_kerja_m_id,m.jdw_kerja_m_name,d.jdw_kerja_d_idx,d.jdw_kerja_d_hari,d.jdw_kerja_d_libur,j.jk_name,j.jk_bcin,j.jk_ecout,j.jk_tol_late FROM jdw_kerja_m m LEFT JOIN jdw_kerja_d d ON d.jdw_kerja_m_id=m.jdw_kerja_m_id LEFT JOIN jam_kerja j ON j.jk_id=d.jk_id ORDER BY m.jdw_kerja_m_id,d.jdw_kerja_d_idx")->fetchAll();
     $report = [
         'mode' => $apply ? 'APPLY' : 'DRY_RUN',
         'source_scope' => 'SD',
@@ -68,6 +70,8 @@ try {
         'scanlog_valid_date_count' => $validScans,
         'scanlog_placeholder_date_count' => $placeholderScans,
         'target_unit' => 'SDIT',
+        'unmatched_source_pins' => $unmatchedPins,
+        'schedule_pattern_details' => $schedulePatternRows,
         'notes' => [
             'PIN dipertahankan sebagai teks.',
             'Data pegawai dengan PIN yang sudah ada tidak ditimpa.',
@@ -123,7 +127,7 @@ try {
     $findPin = $target->prepare('SELECT id FROM employees WHERE pin=? LIMIT 1');
     $insertScan = $target->prepare("INSERT IGNORE INTO raw_scanlogs (machine_id,employee_id,pin,scanned_at,verify_method,device_event_code,device_transaction_id,source,raw_payload) VALUES (?,?,?,?,?,?,?,?,?)");
     $scanInserted = 0; $scanUnmatched = 0; $scanDuplicates = 0;
-    $scanQuery = $legacy->query("SELECT sn,scan_date,pin,verifymode,inoutmode,reserved,work_code,att_id FROM att_log WHERE scan_date >= '2001-01-01 00:00:00' ORDER BY scan_date,sn,pin");
+    $scanQuery = $legacy->query("SELECT sn,scan_date,pin,verifymode,inoutmode,reserved,work_code,att_id FROM att_log WHERE scan_date >= '2001-01-01 00:00:00' AND DATE(scan_date)<>'2000-01-01' ORDER BY scan_date,sn,pin");
     while ($scan = $scanQuery->fetch()) {
         $pin = trim((string)$scan['pin']);
         $findPin->execute([$pin]); $employeeId = $findPin->fetchColumn();
