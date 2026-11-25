@@ -525,4 +525,59 @@ if ($path === '/attendance/batches' && $method === 'GET') {
     jsonResponse(200,['ok'=>true,'data'=>$rows]);
 }
 
+
+/* User administration: only administrators may manage application accounts. */
+if ($path === '/users' && $method === 'GET') {
+    requireRole(['admin']);
+    try {
+        $rows=database()->query('SELECT id,username,display_name,role,is_active,last_login_at,created_at FROM app_users ORDER BY display_name,username')->fetchAll();
+        jsonResponse(200,['ok'=>true,'data'=>$rows]);
+    } catch(Throwable $e) { error_log('[users list] '.$e->getMessage()); jsonResponse(500,['ok'=>false,'message'=>'Gagal mengambil daftar pengguna.']); }
+}
+if ($path === '/users' && $method === 'POST') {
+    $user=requireRole(['admin']); requireCsrf(); $b=requestJson();
+    $username=trim((string)($b['username']??'')); $display=trim((string)($b['display_name']??''));
+    $password=(string)($b['password']??''); $role=(string)($b['role']??'viewer');
+    if(!preg_match('/^[A-Za-z0-9._-]{3,80}$/',$username))jsonResponse(422,['ok'=>false,'message'=>'Username 3–80 karakter; gunakan huruf, angka, titik, garis bawah, atau tanda hubung.']);
+    if($display===''||strlen($display)>150)jsonResponse(422,['ok'=>false,'message'=>'Nama tampilan wajib diisi (maksimal 150 karakter).']);
+    if(strlen($password)<10)jsonResponse(422,['ok'=>false,'message'=>'Password minimal 10 karakter.']);
+    if(!in_array($role,['admin','operator','viewer'],true))jsonResponse(422,['ok'=>false,'message'=>'Peran pengguna tidak valid.']);
+    try {
+        $pdo=database(); $hash=password_hash($password,PASSWORD_DEFAULT);
+        $st=$pdo->prepare('INSERT INTO app_users (username,password_hash,display_name,role,is_active) VALUES (?,?,?,?,1)');
+        $st->execute([$username,$hash,$display,$role]); $id=(int)$pdo->lastInsertId();
+        audit($pdo,(int)$user['id'],'create','app_user',$id,null,['username'=>$username,'display_name'=>$display,'role'=>$role,'is_active'=>1]);
+        jsonResponse(201,['ok'=>true,'id'=>$id,'message'=>'Pengguna berhasil dibuat.']);
+    } catch(PDOException $e) { if((string)$e->getCode()==='23000')jsonResponse(409,['ok'=>false,'message'=>'Username sudah digunakan.']); error_log('[users create] '.$e->getMessage()); jsonResponse(500,['ok'=>false,'message'=>'Gagal membuat pengguna.']); }
+}
+if (preg_match('#^/users/(\d+)$#',$path,$userMatch) && $method === 'PUT') {
+    $user=requireRole(['admin']); requireCsrf(); $id=(int)$userMatch[1]; $b=requestJson();
+    if($id<1)jsonResponse(422,['ok'=>false,'message'=>'ID pengguna tidak valid.']);
+    try {
+        $pdo=database(); $st=$pdo->prepare('SELECT id,username,display_name,role,is_active FROM app_users WHERE id=?'); $st->execute([$id]); $before=$st->fetch();
+        if(!$before)jsonResponse(404,['ok'=>false,'message'=>'Pengguna tidak ditemukan.']);
+        $display=trim((string)($b['display_name']??$before['display_name']));
+        $role=(string)($b['role']??$before['role']); $active=array_key_exists('is_active',$b)?(int)(bool)$b['is_active']:(int)$before['is_active'];
+        $password=(string)($b['password']??'');
+        if($display===''||strlen($display)>150)jsonResponse(422,['ok'=>false,'message'=>'Nama tampilan wajib diisi (maksimal 150 karakter).']);
+        if(!in_array($role,['admin','operator','viewer'],true))jsonResponse(422,['ok'=>false,'message'=>'Peran pengguna tidak valid.']);
+        if($password!==''&&strlen($password)<10)jsonResponse(422,['ok'=>false,'message'=>'Password baru minimal 10 karakter.']);
+        if($id===(int)$user['id']&&($active!==1||$role!=='admin'))jsonResponse(409,['ok'=>false,'message'=>'Akun yang sedang digunakan tidak boleh dinonaktifkan atau diturunkan perannya.']);
+        if($before['role']==='admin'&&((string)$before['role']!==$role||$active===0)){
+            $count=(int)$pdo->query("SELECT COUNT(*) FROM app_users WHERE role='admin' AND is_active=1")->fetchColumn();
+            if($count<=1)jsonResponse(409,['ok'=>false,'message'=>'Tidak dapat menonaktifkan atau mengubah peran admin aktif terakhir.']);
+        }
+        $pdo->beginTransaction();
+        if($password!==''){
+            $pdo->prepare('UPDATE app_users SET display_name=?,role=?,is_active=?,password_hash=? WHERE id=?')->execute([$display,$role,$active,password_hash($password,PASSWORD_DEFAULT),$id]);
+        } else {
+            $pdo->prepare('UPDATE app_users SET display_name=?,role=?,is_active=? WHERE id=?')->execute([$display,$role,$active,$id]);
+        }
+        $after=['username'=>$before['username'],'display_name'=>$display,'role'=>$role,'is_active'=>$active,'password_changed'=>$password!==''];
+        audit($pdo,(int)$user['id'],'update','app_user',$id,$before,$after); $pdo->commit();
+        jsonResponse(200,['ok'=>true,'message'=>'Pengaturan pengguna diperbarui.']);
+    } catch(Throwable $e) { if(isset($pdo)&&$pdo->inTransaction())$pdo->rollBack(); error_log('[users update] '.$e->getMessage()); jsonResponse(500,['ok'=>false,'message'=>'Gagal memperbarui pengguna.']); }
+}
+
+
 jsonResponse(404,['ok'=>false,'message'=>'Endpoint tidak ditemukan.']);
