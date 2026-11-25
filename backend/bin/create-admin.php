@@ -17,9 +17,9 @@ try {
     }
     $username=trim((string)readline('Username admin: '));
     $display=trim((string)readline('Nama admin: '));
-    $password=(string)readline('Password admin (minimal 12 karakter): ');
+    $password=(string)(getenv('CLONEFRINGER_INITIAL_ADMIN_PASSWORD') ?: '');
     if ($username==='' || $display==='' || strlen($password)<12) {
-        fwrite(STDERR,"Input tidak valid. Password minimal 12 karakter.\n");
+        fwrite(STDERR,"Input tidak valid. Atur CLONEFRINGER_INITIAL_ADMIN_PASSWORD melalui environment; minimal 12 karakter.\n");
         exit(1);
     }
     $hash=password_hash($password,PASSWORD_DEFAULT);
