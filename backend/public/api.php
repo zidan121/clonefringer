@@ -262,6 +262,32 @@ if (preg_match('#^/machines/(\\d+)$#',$path,$machineMatch)) {
     }
 }
 
+/* Calendar event update and delete. */
+if (preg_match('#^/calendar/(\\d+)$#',$path,$m)) {
+    $id=(int)$m[1];
+    if($method==='PUT'){
+        $user=requireRole(['admin','operator']);requireCsrf();$b=requestJson();
+        $allowed=['name','event_type','unit_id','start_date','end_date','impact','notes'];$changes=array_intersect_key($b,array_flip($allowed));
+        if(!$changes)jsonResponse(422,['ok'=>false,'message'=>'Tidak ada data kalender yang diperbarui.']);
+        $types=['national_holiday','foundation_holiday','unit_holiday','special_activity'];
+        if(isset($changes['event_type'])&&!in_array($changes['event_type'],$types,true))jsonResponse(422,['ok'=>false,'message'=>'Jenis kalender tidak valid.']);
+        if(isset($changes['impact'])&&!in_array($changes['impact'],['non_working','working'],true))jsonResponse(422,['ok'=>false,'message'=>'Dampak kalender tidak valid.']);
+        foreach(['start_date','end_date'] as $field)if(isset($changes[$field])&&!preg_match('/^\\d{4}-\\d{2}-\\d{2}$/',(string)$changes[$field]))jsonResponse(422,['ok'=>false,'message'=>'Tanggal kalender tidak valid.']);
+        try{$pdo=database();$st=$pdo->prepare('SELECT * FROM calendar_events WHERE id=?');$st->execute([$id]);$before=$st->fetch();if(!$before)jsonResponse(404,['ok'=>false,'message'=>'Kegiatan kalender tidak ditemukan.']);
+            $start=$changes['start_date']??$before['start_date'];$end=$changes['end_date']??$before['end_date'];if($end<$start)jsonResponse(422,['ok'=>false,'message'=>'Tanggal selesai tidak boleh sebelum tanggal mulai.']);
+            if(array_key_exists('unit_id',$changes)&&$changes['unit_id']==='')$changes['unit_id']=null;
+            $sets=[];$vals=[];foreach($changes as $k=>$v){$sets[]=$k.'=?';$vals[]=$v;}$vals[]=$id;$pdo->prepare('UPDATE calendar_events SET '.implode(',',$sets).' WHERE id=?')->execute($vals);
+            audit($pdo,(int)$user['id'],'update','calendar_event',$id,$before,$b);jsonResponse(200,['ok'=>true,'message'=>'Kegiatan kalender diperbarui.']);
+        }catch(Throwable $e){error_log('[calendar update] '.$e->getMessage());jsonResponse(500,['ok'=>false,'message'=>'Gagal memperbarui kalender.']);}
+    }
+    if($method==='DELETE'){
+        $user=requireRole(['admin']);requireCsrf();
+        try{$pdo=database();$st=$pdo->prepare('SELECT * FROM calendar_events WHERE id=?');$st->execute([$id]);$before=$st->fetch();if(!$before)jsonResponse(404,['ok'=>false,'message'=>'Kegiatan kalender tidak ditemukan.']);
+            $pdo->prepare('DELETE FROM calendar_events WHERE id=?')->execute([$id]);audit($pdo,(int)$user['id'],'delete','calendar_event',$id,$before,null);jsonResponse(200,['ok'=>true,'message'=>'Kegiatan kalender dihapus.']);
+        }catch(Throwable $e){error_log('[calendar delete] '.$e->getMessage());jsonResponse(500,['ok'=>false,'message'=>'Gagal menghapus kalender.']);}
+    }
+}
+
 /* Per-employee schedule assignments with optional individual overrides. */
 if ($path === '/schedule-assignments' && $method === 'GET') {
     requireUser();
