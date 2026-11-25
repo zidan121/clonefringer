@@ -15,6 +15,25 @@ if ($method === 'GET' && $path === '/health') {
     catch (Throwable $e) { error_log('[health] '.$e->getMessage()); jsonResponse(503,['ok'=>false,'database'=>'unavailable','message'=>'Database belum terhubung atau konfigurasi belum lengkap.']); }
 }
 
+
+if ($method === 'GET' && $path === '/dashboard/summary') {
+    requireUser();
+    try {
+        $pdo=database();
+        $summary=[
+            'active_employees'=>(int)$pdo->query("SELECT COUNT(*) FROM employees WHERE employee_status='active'")->fetchColumn(),
+            'total_employees'=>(int)$pdo->query('SELECT COUNT(*) FROM employees')->fetchColumn(),
+            'active_machines'=>(int)$pdo->query("SELECT COUNT(*) FROM machines WHERE status='active'")->fetchColumn(),
+            'total_machines'=>(int)$pdo->query('SELECT COUNT(*) FROM machines')->fetchColumn(),
+            'today_scans'=>(int)$pdo->query('SELECT COUNT(*) FROM raw_scanlogs WHERE DATE(scanned_at)=CURDATE()')->fetchColumn(),
+            'today_results'=>(int)$pdo->query('SELECT COUNT(*) FROM attendance_daily_results WHERE attendance_date=CURDATE()')->fetchColumn(),
+            'unmatched_pins'=>(int)$pdo->query('SELECT COUNT(DISTINCT r.pin) FROM raw_scanlogs r LEFT JOIN scanlog_pin_mappings p ON p.pin=r.pin WHERE r.employee_id IS NULL AND p.id IS NULL')->fetchColumn()
+        ];
+        $latest=$pdo->query('SELECT id,period_start,period_end,status,row_count,created_at FROM processing_batches ORDER BY id DESC LIMIT 1')->fetch()?:null;
+        jsonResponse(200,['ok'=>true,'data'=>$summary,'latest_batch'=>$latest,'server_date'=>date('Y-m-d')]);
+    } catch(Throwable $e) { error_log('[dashboard summary] '.$e->getMessage()); jsonResponse(500,['ok'=>false,'message'=>'Ringkasan dashboard gagal dimuat.']); }
+}
+
 if ($method === 'POST' && $path === '/auth/login') {
     startAppSession();
     $body = requestJson();
