@@ -155,6 +155,38 @@ if ($path === '/schedules' && $method === 'POST') {
     }catch(PDOException $e){if($e->getCode()==='23000')jsonResponse(409,['ok'=>false,'message'=>'Kode jam kerja sudah digunakan.']);error_log('[schedule create] '.$e->getMessage());jsonResponse(500,['ok'=>false,'message'=>'Gagal membuat jam kerja.']);}
 }
 
+/* Schedule update and safe deactivation. */
+if (preg_match('#^/schedules/(\\d+)$#',$path,$m)) {
+    $id=(int)$m[1];
+    if ($method==='PUT') {
+        $user=requireRole(['admin','operator']); requireCsrf(); $b=requestJson();
+        $allowed=['code','name','start_time','end_time','break_start','break_end','tolerance_minutes','crosses_midnight','active_days','is_active'];
+        $changes=array_intersect_key($b,array_flip($allowed));
+        if(!$changes)jsonResponse(422,['ok'=>false,'message'=>'Tidak ada data jadwal yang diperbarui.']);
+        if(isset($changes['active_days'])){
+            $valid=['Senin','Selasa','Rabu','Kamis','Jumat','Sabtu','Minggu'];
+            if(!is_array($changes['active_days'])||!$changes['active_days']||array_diff($changes['active_days'],$valid))jsonResponse(422,['ok'=>false,'message'=>'Hari aktif tidak valid.']);
+            $changes['active_days']=json_encode(array_values(array_unique($changes['active_days'])),JSON_UNESCAPED_UNICODE);
+        }
+        if(isset($changes['tolerance_minutes'])&&(!is_numeric($changes['tolerance_minutes'])||(int)$changes['tolerance_minutes']<0||(int)$changes['tolerance_minutes']>600))jsonResponse(422,['ok'=>false,'message'=>'Toleransi harus 0–600 menit.']);
+        foreach(['start_time','end_time','break_start','break_end'] as $field)if(array_key_exists($field,$changes)&&$changes[$field]!==null&&$changes[$field]!==''&&!preg_match('/^([01]\\d|2[0-3]):[0-5]\\d(:[0-5]\\d)?$/',(string)$changes[$field]))jsonResponse(422,['ok'=>false,'message'=>'Format jam tidak valid.']);
+        try{
+            $pdo=database();$st=$pdo->prepare('SELECT * FROM work_schedules WHERE id=?');$st->execute([$id]);$before=$st->fetch();
+            if(!$before)jsonResponse(404,['ok'=>false,'message'=>'Jadwal tidak ditemukan.']);
+            $sets=[];$vals=[];
+            foreach($changes as $k=>$v){$sets[]=$k.'=?';$vals[]=$v===''?null:$v;}
+            $vals[]=$id;$pdo->prepare('UPDATE work_schedules SET '.implode(',',$sets).' WHERE id=?')->execute($vals);
+            audit($pdo,(int)$user['id'],'update','work_schedule',$id,$before,$b);jsonResponse(200,['ok'=>true,'message'=>'Jadwal diperbarui.']);
+        }catch(PDOException $e){if($e->getCode()==='23000')jsonResponse(409,['ok'=>false,'message'=>'Kode jadwal sudah digunakan.']);error_log('[schedule update] '.$e->getMessage());jsonResponse(500,['ok'=>false,'message'=>'Gagal memperbarui jadwal.']);}
+    }
+    if($method==='DELETE'){
+        $user=requireRole(['admin']);requireCsrf();
+        try{$pdo=database();$st=$pdo->prepare('SELECT * FROM work_schedules WHERE id=?');$st->execute([$id]);$before=$st->fetch();if(!$before)jsonResponse(404,['ok'=>false,'message'=>'Jadwal tidak ditemukan.');
+            $pdo->prepare('UPDATE work_schedules SET is_active=0 WHERE id=?')->execute([$id]);audit($pdo,(int)$user['id'],'deactivate','work_schedule',$id,$before,['is_active'=>0]);jsonResponse(200,['ok'=>true,'message'=>'Jadwal dinonaktifkan; riwayat penugasan tetap dipertahankan.']);
+        }catch(Throwable $e){error_log('[schedule deactivate] '.$e->getMessage());jsonResponse(500,['ok'=>false,'message'=>'Gagal menonaktifkan jadwal.']);}
+    }
+}
+
 /* Calendar events */
 if ($path === '/calendar' && $method === 'GET') {
     requireUser();
