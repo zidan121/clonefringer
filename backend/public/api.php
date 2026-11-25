@@ -196,7 +196,7 @@ if (preg_match('#^/schedules/(\\d+)$#',$path,$m)) {
 /* Calendar events */
 if ($path === '/calendar' && $method === 'GET') {
     requireUser();
-    $st=database()->query('SELECT c.id,c.name,c.event_type,c.unit_id,u.code AS unit_code,c.start_date,c.end_date,c.impact,c.notes FROM calendar_events c LEFT JOIN units u ON u.id=c.unit_id ORDER BY c.start_date DESC LIMIT 1000');
+    $st=database()->query('SELECT c.id,c.name,c.event_type,c.unit_id,u.code AS unit_code,u.name AS unit_name,c.start_date,c.end_date,c.impact,c.notes FROM calendar_events c LEFT JOIN units u ON u.id=c.unit_id ORDER BY c.start_date DESC LIMIT 1000');
     jsonResponse(200,['ok'=>true,'data'=>$st->fetchAll()]);
 }
 if ($path === '/calendar' && $method === 'POST') {
@@ -318,8 +318,26 @@ if ($path === '/unit-schedule-defaults' && $method === 'POST') {
     $unit=filter_var($b['unit_id']??null,FILTER_VALIDATE_INT);$schedule=filter_var($b['schedule_id']??null,FILTER_VALIDATE_INT);$from=$b['effective_from']??'';
     $to=$b['effective_to']??null;
     if(!$unit||!$schedule||!preg_match('/^\\d{4}-\\d{2}-\\d{2}$/',(string)$from)||($to!==null&&$to!==''&&(!preg_match('/^\\d{4}-\\d{2}-\\d{2}$/',(string)$to)||$to<$from)))jsonResponse(422,['ok'=>false,'message'=>'Default jadwal unit tidak valid.']);
-    try{$pdo=database();$st=$pdo->prepare('INSERT INTO unit_schedule_defaults (unit_id,schedule_id,effective_from,effective_to) VALUES (?,?,?,?)');$st->execute([$unit,$schedule,$from,$to?:null]);$id=(int)$pdo->lastInsertId();audit($pdo,(int)$user['id'],'create','unit_schedule_default',$id,null,$b);jsonResponse(201,['ok'=>true,'id'=>$id,'message'=>'Default jadwal unit tersimpan.']);}
-    catch(PDOException $e){if($e->getCode()==='23000')jsonResponse(422,['ok'=>false,'message'=>'Unit atau master jadwal tidak ditemukan.']);error_log('[unit default create] '.$e->getMessage());jsonResponse(500,['ok'=>false,'message'=>'Gagal menyimpan default jadwal.']);}
+    try{
+        $pdo=database();$pdo->beginTransaction();
+        $same=$pdo->prepare('SELECT * FROM unit_schedule_defaults WHERE unit_id=? AND effective_from=? LIMIT 1 FOR UPDATE');
+        $same->execute([$unit,$from]);$existing=$same->fetch();
+        $future=$pdo->prepare('SELECT MIN(effective_from) FROM unit_schedule_defaults WHERE unit_id=? AND effective_from>?');
+        $future->execute([$unit,$from]);$nextDate=$future->fetchColumn();
+        $effectiveTo=$to?:null;
+        if($nextDate){$dayBefore=date('Y-m-d',strtotime($nextDate.' -1 day'));if($effectiveTo===null||$effectiveTo>$dayBefore)$effectiveTo=$dayBefore;}
+        $prior=$pdo->prepare('SELECT * FROM unit_schedule_defaults WHERE unit_id=? AND effective_from<? AND (effective_to IS NULL OR effective_to>=?) FOR UPDATE');
+        $prior->execute([$unit,$from,$from]);$closed=$prior->fetchAll();
+        foreach($closed as $row){$pdo->prepare('UPDATE unit_schedule_defaults SET effective_to=? WHERE id=?')->execute([date('Y-m-d',strtotime($from.' -1 day')),$row['id']]);}
+        if($existing){
+            $id=(int)$existing['id'];$pdo->prepare('UPDATE unit_schedule_defaults SET schedule_id=?,effective_to=? WHERE id=?')->execute([$schedule,$effectiveTo,$id]);
+            audit($pdo,(int)$user['id'],'update','unit_schedule_default',$id,$existing,['schedule_id'=>$schedule,'effective_from'=>$from,'effective_to'=>$effectiveTo]);
+        }else{
+            $st=$pdo->prepare('INSERT INTO unit_schedule_defaults (unit_id,schedule_id,effective_from,effective_to) VALUES (?,?,?,?)');$st->execute([$unit,$schedule,$from,$effectiveTo]);$id=(int)$pdo->lastInsertId();
+            audit($pdo,(int)$user['id'],'create','unit_schedule_default',$id,null,['unit_id'=>$unit,'schedule_id'=>$schedule,'effective_from'=>$from,'effective_to'=>$effectiveTo]);
+        }
+        $pdo->commit();jsonResponse(201,['ok'=>true,'id'=>$id,'message'=>'Default jadwal unit tersimpan tanpa menimpa riwayat sebelumnya.']);
+    }catch(Throwable $e){if(isset($pdo)&&$pdo->inTransaction())$pdo->rollBack();if($e instanceof PDOException&&$e->getCode()==='23000')jsonResponse(422,['ok'=>false,'message'=>'Unit atau master jadwal tidak ditemukan.']);error_log('[unit default create] '.$e->getMessage());jsonResponse(500,['ok'=>false,'message'=>'Gagal menyimpan default jadwal.']);}
 }
 
 
