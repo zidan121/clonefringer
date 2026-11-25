@@ -46,10 +46,11 @@
 - [ ] Komponen, formula, grup, proses gaji
 - [ ] Ekspor dan cetak
 
-## Tahap 7 — Operasional
+## Tahap 7 — Backend dan data persisten\n- [x] Skema relasional MySQL untuk unit, pegawai, mesin, jadwal, kalender, pengecualian, scanlog mentah, batch proses, hasil harian, dan audit\n- [x] Bootstrap koneksi PDO dan endpoint health-check awal\n- [ ] Login, sesi aman, dan hak akses\n- [ ] CRUD API dan validasi server\n- [ ] Migrasi database berversi dan backup/restore teruji\n- [ ] Mesin kalkulasi server dengan batch dan audit\n\n## Tahap 8 — Operasional
 - [ ] Login dan hak akses
 - [ ] Backup/restore teruji
 - [ ] Migrasi database
 - [ ] Pengujian regresi dan dokumentasi instalasi
 
 > Integrasi perangkat keras dan kompatibilitas database belum dianggap selesai sampai diuji dengan perangkat/database nyata dan tersedia sampel data yang aman.
+\n\n> Skema dan health-check telah ditambahkan, tetapi UI belum terhubung ke API. Jangan masukkan data operasional sebelum autentikasi, CRUD, kalkulasi server, backup/restore, dan pengujian selesai.\n
