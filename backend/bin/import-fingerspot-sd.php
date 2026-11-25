@@ -74,7 +74,8 @@ try {
         'scanlogs_before_employee_join_date' => $scansBeforeEmployment,
         'target_unit' => 'SDIT',
         'unmatched_source_pins' => $unmatchedPins,
-        'schedule_pattern_details' => $schedulePatternRows,\n        'schedule_assignment_count' => count($assignmentRows),
+        'schedule_pattern_details' => $schedulePatternRows,
+        'schedule_assignment_count' => count($assignmentRows),
         'notes' => [
             'PIN dipertahankan sebagai teks.',
             'Data pegawai dengan PIN yang sudah ada tidak ditimpa.',
