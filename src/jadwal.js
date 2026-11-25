@@ -4,6 +4,7 @@ let scheduleAssignments=[];
 let scheduleEmployees=[];
 let scheduleSelectedId=null;
 let scheduleEditingId=null;
+const localScheduleDate=()=>{const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;};
 const scheduleDays=["Senin","Selasa","Rabu","Kamis","Jumat","Sabtu","Minggu"];
 const escSchedule=v=>String(v??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 function schedulePage(){return `<section class="schedule-page"><header class="page-heading"><h1>Master Jam Kerja & Jadwal</h1><p>Atur master jam kerja dan penugasan jadwal individual pegawai.</p></header>
@@ -14,7 +15,7 @@ function schedulePage(){return `<section class="schedule-page"><header class="pa
 <dialog id="assignment-dialog" class="employee-dialog"><form id="assignment-form"><div class="dialog-head"><strong>Atur jadwal pegawai</strong><button type="button" id="assignment-close">×</button></div><input type="hidden" name="employee_id"><div class="form-grid"><label>Nama pegawai<input name="name" disabled></label><label>Unit<input name="unit" disabled></label><label>Master jadwal<select name="schedule_id" required></select></label><label>Berlaku mulai *<input name="effective_from" type="date" required></label><label>Jam masuk khusus<input name="custom_start" type="time"></label><label>Jam pulang khusus<input name="custom_end" type="time"></label><label>Toleransi khusus<input name="custom_tolerance" type="number" min="0" max="600"></label></div><div class="dialog-actions"><button type="button" class="action-button" id="assignment-cancel">Batal</button><button class="action-button primary" type="submit">Simpan penugasan</button></div></form></dialog></section>`;}
 async function initSchedulePage(){
  const root=document.querySelector(".schedule-page");if(!root)return;const $=id=>document.getElementById(id);
- const today=new Date().toISOString().slice(0,10);
+ const today=localScheduleDate();
  const toTime=v=>String(v||"").slice(0,5);
  const toCode=name=>name.normalize("NFKD").replace(/[^a-zA-Z0-9]+/g,"_").replace(/^_|_$/g,"").toUpperCase().slice(0,40)+"_"+Date.now().toString().slice(-5);
  const mapSchedule=s=>({id:Number(s.id),code:s.code,name:s.name,type:"Tetap",start:toTime(s.start_time),end:toTime(s.end_time),breakStart:toTime(s.break_start),breakEnd:toTime(s.break_end),tolerance:Number(s.tolerance_minutes),days:s.active_days||[],active:!!s.is_active});
