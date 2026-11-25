@@ -1,4 +1,4 @@
-function settingsPage(){return \`
+function settingsPage(){return `
 <section class="settings-page">
  <header class="page-heading"><h1>Pengaturan Pengguna</h1><p>Kelola akun, hak akses, dan status pengguna CLONEFRINGER.</p></header>
  <div class="settings-toolbar"><span id="users-count">Memuat pengguna...</span><button class="action-button primary" id="user-add">＋ Tambah pengguna</button><button class="action-button" id="users-refresh">Muat ulang</button></div>
@@ -17,7 +17,7 @@ function settingsPage(){return \`
  </div>
  <div class="form-hint" id="user-form-message" role="status"></div>
  <div class="dialog-actions"><button type="button" class="action-button" id="user-cancel">Batal</button><button type="submit" class="action-button primary">Simpan</button></div>
-</form></dialog>\`;}
+</form></dialog>`;}
 function initSettingsPage(){
  const body=document.querySelector('#users-body'),count=document.querySelector('#users-count'),dialog=document.querySelector('#user-dialog'),form=document.querySelector('#user-form');
  let rows=[];
@@ -27,7 +27,7 @@ function initSettingsPage(){
   body.innerHTML='<tr><td colspan="6" class="no-data">Memuat data pengguna...</td></tr>';
   try{
    const r=await CfApi.request('/users');rows=r.data||[];count.textContent=rows.length+' akun terdaftar';
-   body.innerHTML=rows.length?rows.map(u=>\`<tr><td><strong>\${esc(u.username)}</strong>\${Number(u.id)===Number(CfApi.user?.id)?' <small>(Anda)</small>':''}</td><td>\${esc(u.display_name)}</td><td>\${esc(({admin:'Admin',operator:'Operator',viewer:'Viewer'})[u.role]||u.role)}</td><td><span class="status-pill \${Number(u.is_active)?'is-active':''}">\${Number(u.is_active)?'Aktif':'Nonaktif'}</span></td><td>\${esc(fmt(u.last_login_at))}</td><td><button class="table-action" data-edit="\${Number(u.id)}">Ubah</button></td></tr>\`).join(''):'<tr><td colspan="6" class="no-data">Belum ada pengguna.</td></tr>';
+   body.innerHTML=rows.length?rows.map(u=>`<tr><td><strong>${esc(u.username)}</strong>${Number(u.id)===Number(CfApi.user?.id)?' <small>(Anda)</small>':''}</td><td>${esc(u.display_name)}</td><td>${esc(({admin:'Admin',operator:'Operator',viewer:'Viewer'})[u.role]||u.role)}</td><td><span class="status-pill ${Number(u.is_active)?'is-active':''}">${Number(u.is_active)?'Aktif':'Nonaktif'}</span></td><td>${esc(fmt(u.last_login_at))}</td><td><button class="table-action" data-edit="${Number(u.id)}">Ubah</button></td></tr>`).join(''):'<tr><td colspan="6" class="no-data">Belum ada pengguna.</td></tr>';
    body.querySelectorAll('[data-edit]').forEach(b=>b.addEventListener('click',()=>edit(Number(b.dataset.edit))));
   }catch(e){count.textContent='Gagal memuat';body.innerHTML='<tr><td colspan="6" class="no-data">'+esc(e.message)+'</td></tr>';}
  }
