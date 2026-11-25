@@ -208,6 +208,28 @@ if ($path === '/machines' && $method === 'POST') {
     catch(PDOException $e){if($e->getCode()==='23000')jsonResponse(409,['ok'=>false,'message'=>'Nomor seri mesin sudah terdaftar.']);error_log('[machine create] '.$e->getMessage());jsonResponse(500,['ok'=>false,'message'=>'Gagal menyimpan mesin.']);}
 }
 
+if (preg_match('#^/machines/(\\d+)$#',$path,$machineMatch)) {
+    $machineId=(int)$machineMatch[1];
+    if ($method==='PUT') {
+        $user=requireRole(['admin','operator']);requireCsrf();$b=requestJson();
+        $allowed=['name','model','serial_number','host','port','connection_type','location','status','notes'];
+        $changes=array_intersect_key($b,array_flip($allowed));
+        if(!$changes)jsonResponse(422,['ok'=>false,'message'=>'Tidak ada perubahan mesin.']);
+        if(isset($changes['name'])&&trim((string)$changes['name'])==='')jsonResponse(422,['ok'=>false,'message'=>'Nama mesin wajib diisi.']);
+        if(isset($changes['host'])&&trim((string)$changes['host'])==='')jsonResponse(422,['ok'=>false,'message'=>'Host mesin wajib diisi.']);
+        if(isset($changes['port'])&&(!filter_var($changes['port'],FILTER_VALIDATE_INT)||$changes['port']<1||$changes['port']>65535))jsonResponse(422,['ok'=>false,'message'=>'Port mesin tidak valid.']);
+        if(isset($changes['connection_type'])&&!in_array($changes['connection_type'],['tcp','udp','http','sdk','file'],true))jsonResponse(422,['ok'=>false,'message'=>'Jenis koneksi tidak valid.']);
+        if(isset($changes['status'])&&!in_array($changes['status'],['active','inactive','maintenance','unknown'],true))jsonResponse(422,['ok'=>false,'message'=>'Status mesin tidak valid.']);
+        try{$pdo=database();$st=$pdo->prepare('SELECT * FROM machines WHERE id=?');$st->execute([$machineId]);$before=$st->fetch();if(!$before)jsonResponse(404,['ok'=>false,'message'=>'Mesin tidak ditemukan.']);$sets=[];$values=[];foreach($changes as $key=>$value){$sets[]=$key.'=?';$values[]=$value===''?null:$value;}$values[]=$machineId;$pdo->prepare('UPDATE machines SET '.implode(',',$sets).' WHERE id=?')->execute($values);audit($pdo,(int)$user['id'],'update','machine',$machineId,$before,$changes);jsonResponse(200,['ok'=>true,'message'=>'Konfigurasi mesin diperbarui.']);}
+        catch(PDOException $e){if($e->getCode()==='23000')jsonResponse(409,['ok'=>false,'message'=>'Nomor serial mesin sudah digunakan.']);error_log('[machine update] '.$e->getMessage());jsonResponse(500,['ok'=>false,'message'=>'Gagal memperbarui mesin.']);}
+    }
+    if($method==='DELETE'){
+        $user=requireRole(['admin']);requireCsrf();
+        try{$pdo=database();$st=$pdo->prepare('SELECT * FROM machines WHERE id=?');$st->execute([$machineId]);$before=$st->fetch();if(!$before)jsonResponse(404,['ok'=>false,'message'=>'Mesin tidak ditemukan.']);$pdo->prepare("UPDATE machines SET status='inactive' WHERE id=?")->execute([$machineId]);audit($pdo,(int)$user['id'],'deactivate','machine',$machineId,$before,['status'=>'inactive']);jsonResponse(200,['ok'=>true,'message'=>'Mesin dinonaktifkan; riwayat scanlog tetap dipertahankan.']);}
+        catch(Throwable $e){error_log('[machine deactivate] '.$e->getMessage());jsonResponse(500,['ok'=>false,'message'=>'Gagal menonaktifkan mesin.']);}
+    }
+}
+
 /* Per-employee schedule assignments with optional individual overrides. */
 if ($path === '/schedule-assignments' && $method === 'GET') {
     requireUser();
