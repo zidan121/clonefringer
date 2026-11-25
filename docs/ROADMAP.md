@@ -17,14 +17,14 @@
 
 ## Tahap 3 — Master dan jadwal
 - [ ] Departemen, kantor, jabatan
-- [x] Master jam kerja, hari aktif, istirahat, dan toleransi (demo lokal)\n- [ ] Persistensi master jam kerja ke database
+- [x] Master jam kerja, hari aktif, istirahat, dan toleransi (demo lokal)\n- [x] Endpoint persistensi master jam kerja ke database (UI belum tersambung)
 - [ ] Jadwal normal, berpola, auto shift
-- [x] UI kalender, CRUD hari libur/kegiatan dan dampak hari kerja (browser lokal)\n- [ ] Kalender nasional terverifikasi dan database
+- [x] UI kalender, CRUD hari libur/kegiatan dan dampak hari kerja (browser lokal)\n- [x] Endpoint penyimpanan kalender ke database (isi kalender tetap perlu diverifikasi)
 - [x] Penugasan master jadwal per pegawai dan override jam/toleransi (demo lokal)\n- [x] Default jadwal per unit (browser lokal)\n- [x] Kalkulasi demo memakai jadwal individual, default unit, kalender, dan pengecualian disetujui\n- [ ] Uji data riil dan shift lintas hari
 
 ## Tahap 4 — Mesin dan transaksi
 - [x] Inventaris perangkat, tambah/ubah/hapus, parameter koneksi, ekspor CSV
-- [ ] Uji komunikasi perangkat melalui backend/adapter nyata
+- [ ] Uji komunikasi perangkat melalui backend/adapter nyata (API inventaris mesin saja tersedia)
 - [ ] Adapter komunikasi per model
 - [ ] Download scanlog
 - [ ] Upload/unduh user jika protokol mendukung
@@ -32,7 +32,7 @@
 - [ ] Status koneksi dan audit sinkronisasi
 
 ## Tahap 5 — Pengecualian dan kalkulasi
-- [x] UI dan CRUD lokal izin, sakit, cuti, perubahan jadwal/jam, lembur\n- [ ] Integrasi pengecualian dengan kalkulasi absensi
+- [x] UI dan CRUD lokal izin, sakit, cuti, perubahan jadwal/jam, lembur\n- [x] Penyimpanan dan alur persetujuan pengecualian melalui API\n- [ ] Integrasi pengecualian dengan kalkulasi absensi
 - [x] Form tukar/ganti jadwal dan jam kerja (lokal)
 - [ ] Lembur dan kerja ekstra
 - [ ] Mesin perhitungan yang dapat diuji
@@ -46,7 +46,7 @@
 - [ ] Komponen, formula, grup, proses gaji
 - [ ] Ekspor dan cetak
 
-## Tahap 7 — Backend dan data persisten\n- [x] Skema relasional MySQL untuk unit, pegawai, mesin, jadwal, kalender, pengecualian, scanlog mentah, batch proses, hasil harian, dan audit\n- [x] Bootstrap koneksi PDO dan endpoint health-check awal\n- [ ] Login, sesi aman, dan hak akses\n- [ ] CRUD API lengkap untuk seluruh master dan pengecualian; validasi server lanjutan\n- [ ] Migrasi database berversi dan backup/restore teruji\n- [ ] Mesin kalkulasi server dengan batch dan audit\n\n## Tahap 8 — Operasional
+## Tahap 7 — Backend dan data persisten\n- [x] Skema relasional MySQL untuk unit, pegawai, mesin, jadwal, kalender, pengecualian, scanlog mentah, batch proses, hasil harian, dan audit\n- [x] Bootstrap koneksi PDO dan endpoint health-check awal\n- [ ] Login, sesi aman, dan hak akses\n- [x] API dasar baca/tambah untuk jam kerja, kalender, pengecualian, inventaris mesin, penugasan jadwal dan default unit\n- [ ] Update/hapus master, validasi lanjutan, dan integrasi seluruh UI\n- [ ] Migrasi database berversi dan backup/restore teruji\n- [ ] Mesin kalkulasi server dengan batch dan audit\n\n## Tahap 8 — Operasional
 - [x] Fondasi login berbasis sesi, role admin/operator/viewer, dan CSRF (API; UI login belum dibuat)\n- [x] API pegawai dasar: daftar, tambah, ubah, nonaktifkan dengan audit (belum terhubung ke UI)\n- [ ] Login dan hak akses
 - [ ] Backup/restore teruji
 - [ ] Migrasi database
