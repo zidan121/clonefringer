@@ -10,9 +10,9 @@
 ## Tahap 2 — Pegawai
 - [ ] Kategori Aktif, Detail, Non Aktif, Berhenti, Segera Habis Kontrak
 - [ ] Filter dan pemilih kolom tabel
-- [ ] Form biodata pegawai
+- [x] Form biodata pegawai (identitas, kepegawaian, kontak, data mesin dasar)
 - [ ] Import/export dengan validasi dan pratinjau
-- [ ] Status, jadwal, pengecualian, registrasi perangkat
+- [x] Status dan jadwal dasar; [ ] pengecualian dan registrasi perangkat
 - [ ] Riwayat perubahan
 
 ## Tahap 3 — Master dan jadwal
