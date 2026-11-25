@@ -484,6 +484,22 @@ if ($path === '/attendance/results' && $method === 'GET') {
     $st=database()->prepare('SELECT r.id,r.employee_id,e.pin,e.full_name,r.attendance_date,r.schedule_id,s.name AS schedule_name,r.first_scan_at,r.last_scan_at,r.scan_count,r.attendance_status,r.late_minutes,r.early_leave_minutes,r.source_scan_ids,r.calculation_detail FROM attendance_daily_results r JOIN employees e ON e.id=r.employee_id LEFT JOIN work_schedules s ON s.id=r.schedule_id WHERE r.batch_id=? ORDER BY r.attendance_date,e.full_name');
     $st->execute([$batch]);jsonResponse(200,['ok'=>true,'data'=>$st->fetchAll()]);
 }
+if (preg_match('#^/attendance/results/(\\d+)/scanlogs$#',$path,$detailMatch) && $method === 'GET') {
+    requireUser();
+    $resultId=(int)$detailMatch[1];
+    $resultStmt=database()->prepare('SELECT source_scan_ids FROM attendance_daily_results WHERE id=?');
+    $resultStmt->execute([$resultId]);
+    $sourceIdsJson=$resultStmt->fetchColumn();
+    if($sourceIdsJson===false)jsonResponse(404,['ok'=>false,'message'=>'Hasil kehadiran tidak ditemukan.']);
+    $sourceIds=json_decode((string)$sourceIdsJson,true);
+    if(!is_array($sourceIds)||!$sourceIds)jsonResponse(200,['ok'=>true,'data'=>[]]);
+    $ids=array_values(array_unique(array_filter(array_map('intval',$sourceIds),static fn($id)=>$id>0)));
+    if(!$ids)jsonResponse(200,['ok'=>true,'data'=>[]]);
+    $marks=implode(',',array_fill(0,count($ids),'?'));
+    $sql='SELECT r.id,r.pin,r.scanned_at,m.name AS machine_name,r.verify_method,r.device_event_code FROM raw_scanlogs r LEFT JOIN machines m ON m.id=r.machine_id WHERE r.id IN ('.$marks.') ORDER BY r.scanned_at,r.id';
+    $st=database()->prepare($sql);$st->execute($ids);
+    jsonResponse(200,['ok'=>true,'data'=>$st->fetchAll()]);
+}
 if ($path === '/attendance/batches' && $method === 'GET') {
     requireUser();
     $rows=database()->query('SELECT id,period_start,period_end,status,ruleset_version,started_at,finished_at,row_count,created_at FROM processing_batches ORDER BY id DESC LIMIT 100')->fetchAll();
