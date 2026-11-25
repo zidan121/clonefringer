@@ -40,10 +40,10 @@ Arahkan web server ke folder `backend/public` untuk API, lalu akses `/api/health
 Jika memakai PHP built-in server untuk uji lokal dari root repository:
 
 ```bash
-php -S 127.0.0.1:8081 -t backend/public
+php -S 127.0.0.1:8081 -t backend/public backend/public/router.php
 ```
 
-Buka `http://127.0.0.1:8081/api.php/health` hanya jika konfigurasi routing server mendukung path tersebut; cara paling sederhana untuk uji langsung adalah `http://127.0.0.1:8081/api.php` (akan memberi 404 sampai route disesuaikan). Untuk penggunaan normal, atur rewrite `/api/health` ke `api.php`.
+Buka `http://127.0.0.1:8081/api/health`. Router development akan meneruskan path tersebut ke endpoint. Untuk Apache/Nginx produksi, atur rewrite `/api/health` ke `api.php`.
 
 ## 4. Prinsip data penting
 
